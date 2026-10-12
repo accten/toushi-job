@@ -1,4 +1,4 @@
-"""BOSS Zhipin 自动招呼语脚本——可安装 Python 包。
+"""投石 · Toushi —— 自动打招呼 / 自动投递助手，可安装 Python 包。
 
 调用入口：
 

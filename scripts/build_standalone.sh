@@ -10,7 +10,7 @@
 #   ./scripts/build_standalone.sh            # 全量构建
 #   BOSS_PYEMBED_REBUILD=1 ./scripts/...     # 强制重建 pyembed
 #
-# 产物：src-tauri/target/bundle-release/bundle/macos/BOSS Zhipin Helper.app
+# 产物：src-tauri/target/bundle-release/bundle/macos/Toushi.app
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

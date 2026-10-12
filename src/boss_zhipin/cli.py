@@ -47,7 +47,7 @@ PLATFORM_CONFIG = {
     "boss": {
         "url": os.getenv("BOSS_RECOMMEND_URL", "https://www.zhipin.com/web/geek/job-recommend?ka=header-job-recommend"),
         "send_message": True,
-        "description": "BOSS Zhipin (sending cover letters)",
+        "description": "Toushi (BOSS Zhipin — sending cover letters)",
     },
     "zhilian": {
         # 默认必须是**岗位列表页**，不是首页：首页 `a[href]` 里「职位」指向 /recommend，

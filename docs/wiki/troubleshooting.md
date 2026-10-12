@@ -272,7 +272,7 @@ rm -rf logs/             # 删历史 audit
 
 然后重跑 `DRY_RUN=1 uv run main.py`。
 
-## 14. 桌面 App（macOS）启动即崩："Check with the developer to make sure BOSS Zhipin Helper works with this version of macOS"
+## 14. 桌面 App（macOS）启动即崩："Check with the developer to make sure Toushi works with this version of macOS"
 
 v0.3.1 的 .app 在 macOS 26+ 上会启动即崩，弹这个系统崩溃对话框。原因：ad-hoc
 签名默认带 hardened runtime，library validation 拒载 bundle 内 linker-signed 的
@@ -290,7 +290,7 @@ entitlement，见 `src-tauri/entitlements.plist`）。
 不想升级的临时绕法——重签去掉 hardened runtime flag：
 
 ```bash
-codesign --force --deep -s - "/Applications/BOSS Zhipin Helper.app"
+codesign --force --deep -s - "/Applications/Toushi.app"
 ```
 
 ## 还是不行？

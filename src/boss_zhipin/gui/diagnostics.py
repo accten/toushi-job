@@ -80,7 +80,7 @@ def build_ai_help(logs: list[str] | None = None) -> str:
         usr_name = g["usr_name"] or "(not set)"
         log_text = log_text or "(no logs yet — maybe Start hasn't been clicked)"
         return (
-            f"I'm using an open-source desktop app, \"BOSS Zhipin Auto-Greet\" "
+            f"I'm using an open-source desktop app, \"Toushi\" "
             f"(https://github.com/{repo}).\n"
             "What it does: it browses recommended jobs on BOSS Zhipin, pulls each job "
             "description, uses an AI to write a Chinese greeting, and sends it (a personal "

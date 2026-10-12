@@ -57,7 +57,7 @@ def _fetch_latest_tag(timeout: float) -> tuple[str, str]:
     必须带 User-Agent，否则 GitHub API 直接 403。
     """
     req = Request(_API_URL, headers={
-        "User-Agent": "boss-zhipin-updater",
+        "User-Agent": "toushi-updater",
         "Accept": "application/vnd.github+json",
     })
     with urlopen(req, timeout=timeout) as resp:  # noqa: S310 (固定 https GitHub API)
