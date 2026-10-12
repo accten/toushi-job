@@ -203,14 +203,14 @@ export default function ConfigPage() {
             <section className="space-y-5">
               <div>
                 <label className="field-label">{t("config.endpoint")}</label>
-                <p className="mt-1 text-xs font-mono text-[var(--muted-fg)] italic">
+                <p className="mt-1 text-sm font-mono text-[var(--muted-fg)] italic">
                   {t("config.endpointHint")}
                 </p>
               </div>
 
               {/* 常用快捷：默认「自定义」，选了自动填 base_url + model */}
               <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-center">
-                <div className="font-mono text-xs uppercase tracking-widest text-[var(--muted-fg)]">
+                <div className="font-mono text-sm uppercase tracking-widest text-[var(--muted-fg)]">
                   {t("config.preset")}
                 </div>
                 <select
@@ -229,7 +229,7 @@ export default function ConfigPage() {
 
               {/* Base URL */}
               <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-start">
-                <div className="font-mono text-xs uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1 self-start">
+                <div className="font-mono text-sm uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1 self-start">
                   LLM_BASE_URL
                 </div>
                 <input
@@ -243,7 +243,7 @@ export default function ConfigPage() {
 
               {/* Model */}
               <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-start">
-                <div className="font-mono text-xs uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1 self-start">
+                <div className="font-mono text-sm uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1 self-start">
                   LLM_MODEL
                 </div>
                 <input
@@ -258,14 +258,14 @@ export default function ConfigPage() {
               {/* API Key */}
               <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-start">
                 <div>
-                  <div className="font-mono text-xs uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1">
+                  <div className="font-mono text-sm uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1">
                     LLM_API_KEY
                   </div>
-                  <p className="mt-2 text-[10px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
+                  <p className="mt-2 text-[13px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
                     {t("config.secret")}
                   </p>
                   {selectedPreset && (
-                    <p className="mt-2 text-xs font-serif leading-snug text-[var(--muted-fg)] break-all">
+                    <p className="mt-2 text-sm font-serif leading-snug text-[var(--muted-fg)] break-all">
                       {t("config.signup", { url: selectedPreset.signupUrl })}
                     </p>
                   )}
@@ -286,7 +286,7 @@ export default function ConfigPage() {
                     <button
                       type="button"
                       onClick={() => setShowKey((v) => !v)}
-                      className="btn-ghost text-xs flex-shrink-0"
+                      className="btn-ghost text-sm flex-shrink-0"
                       aria-label={showKey ? t("config.hideKeyAria") : t("config.showKeyAria")}
                     >
                       {showKey ? t("btn.hide") : t("btn.show")}
@@ -294,7 +294,7 @@ export default function ConfigPage() {
                   </div>
                   {/* 选了预设但还没配 key：提示去填，别等点开始才发现没 key */}
                   {selectedPreset && !llmCfg.hasKey && !keyEdit && (
-                    <p className="mt-2 text-xs font-mono text-[var(--muted-fg)] italic">
+                    <p className="mt-2 text-sm font-mono text-[var(--muted-fg)] italic">
                       {t("config.presetKeyHint", { label: selectedPreset.label })}
                     </p>
                   )}
@@ -308,14 +308,14 @@ export default function ConfigPage() {
             {fields.map((f) => (
               <div key={f.key} className="py-6 grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-start">
                 <div>
-                  <div className="font-mono text-xs uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1">
+                  <div className="font-mono text-sm uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1">
                     {f.key}
                   </div>
                   <p className="mt-2 text-sm font-serif leading-snug text-[var(--ink)]">
                     {t(`field.${f.key}`)}
                   </p>
                   {f.isSecret && (
-                    <p className="mt-1 text-[10px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
+                    <p className="mt-1 text-[13px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
                       {t("config.secret")}
                     </p>
                   )}
@@ -337,7 +337,7 @@ export default function ConfigPage() {
           <section className="space-y-3 border-t-2 border-[var(--ink)] pt-6">
             <div>
               <label className="field-label">{t("config.letterPrompt")}</label>
-              <p className="mt-1 text-xs font-mono text-[var(--muted-fg)] italic">
+              <p className="mt-1 text-sm font-mono text-[var(--muted-fg)] italic">
                 {t("config.letterPromptHint")}
               </p>
             </div>
@@ -353,12 +353,12 @@ export default function ConfigPage() {
                 type="button"
                 onClick={() => editPrompt("")}
                 disabled={letterPrompt === ""}
-                className="btn-ghost text-xs"
+                className="btn-ghost text-sm"
               >
                 {t("btn.resetDefault")}
               </button>
               {letterPrompt === "" && (
-                <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
+                <span className="text-[13px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
                   {t("config.letterPromptPlaceholder")}
                 </span>
               )}

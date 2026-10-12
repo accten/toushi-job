@@ -26,7 +26,7 @@ export default function UpdateBanner() {
   if (!info || dismissed) return null;
 
   return (
-    <div className="bg-[var(--ink)] text-[var(--paper)] text-[11px] font-mono uppercase tracking-widest">
+    <div className="bg-[var(--ink)] text-[var(--paper)] text-[13px] font-mono uppercase tracking-widest">
       <div className="max-w-7xl mx-auto px-8 py-2 flex items-center gap-4">
         <span>
           {t("update.available", { latest: info.latest, current: info.current })}

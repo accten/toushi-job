@@ -6,17 +6,28 @@
 
 import asyncio
 import os
+import types
 
 from boss_zhipin.website_oper import finding_jobs
 from boss_zhipin.website_oper.finding_jobs import (
+    LoginRequiredError,
+    PageReloadingError,
     _apply_sandbox_setting,
     _env_flag_true,
+    _login_wait_seconds,
     _should_disable_sandbox,
     _clear_singleton_locks,
     _count_real_job_cards,
     _ensure_localhost_bypasses_proxy,
     _is_logged_in_from_page_state,
+    _is_stale_session_error,
+    _label_tokens,
+    _raise_if_page_reloading,
+    _safe_evaluate,
+    _record_document_origin,
+    _wait_for_job_cards,
     get_loaded_job_count,
+    log_in,
     return_to_job_list,
     scroll_to_load_more_jobs,
     _strip_jd_noise,
@@ -224,17 +235,67 @@ def test_jobs_page_with_login_required_text_is_not_logged_in():
     )
 
 
+def _rendered_page_state(**overrides):
+    """一个"已渲染且没有任何未登录信号"的页面探测结果。"""
+    state = {
+        "readyState": "complete",
+        "bodyLength": 4000,
+        "headerLoginText": False,
+        "loginWallVisible": False,
+        "headerLoginVisible": False,
+        "loginRequiredVisible": False,
+    }
+    state.update(overrides)
+    return state
+
+
 def test_jobs_page_without_login_signals_is_logged_in():
     assert (
         _is_logged_in_from_page_state(
             "https://www.zhipin.com/web/geek/job-recommend",
-            {
-                "loginWallVisible": False,
-                "headerLoginVisible": False,
-                "loginRequiredVisible": False,
-            },
+            _rendered_page_state(),
         )
         is True
+    )
+
+
+def test_blank_document_is_not_treated_as_logged_in():
+    """整页重载的空档里 body 是空的，不能因为"没看到未登录信号"就判已登录。"""
+    assert (
+        _is_logged_in_from_page_state(
+            "https://www.zhipin.com/web/geek/job-recommend",
+            _rendered_page_state(bodyLength=0),
+        )
+        is False
+    )
+    # readyState 还是 complete，但正文只有几十个字符 —— 一样不算渲染出来
+    assert (
+        _is_logged_in_from_page_state(
+            "https://www.zhipin.com/web/geek/job-recommend",
+            _rendered_page_state(bodyLength=42),
+        )
+        is False
+    )
+
+
+def test_not_ready_document_is_not_treated_as_logged_in():
+    assert (
+        _is_logged_in_from_page_state(
+            "https://www.zhipin.com/web/geek/job-recommend",
+            _rendered_page_state(readyState="loading"),
+        )
+        is False
+    )
+
+
+def test_header_login_text_means_not_logged_in():
+    """顶部写着「登录/注册」就是没登录，不看 class 名。"""
+    assert (
+        _is_logged_in_from_page_state(
+            "https://www.zhipin.com/web/geek/job-recommend",
+            _rendered_page_state(headerLoginText=True),
+        )
+        is False
     )
 
 
@@ -387,3 +448,311 @@ def test_return_to_job_list_retries_until_cards_are_visible(monkeypatch):
         assert len(back_calls) == 2
 
     asyncio.run(scenario())
+
+
+# ---------- 虚拟列表重渲染时不要滚窗口 ----------
+
+
+def test_scroll_does_not_touch_window_while_list_is_rerendering(monkeypatch):
+    """卡片数为 0（虚拟列表正在卸载/重挂）时一次都不许滚，等回来重试同一个 index。"""
+
+    async def scenario():
+        counts = iter([0, 0, 15])
+        evaluate_calls: list[str] = []
+
+        async def fake_count():
+            return next(counts)
+
+        async def fake_evaluate(js: str, timeout: float = 10):
+            evaluate_calls.append(js)
+            return {"ok": True, "target": "window"}
+
+        async def fake_sleep(delay: float):
+            return None
+
+        monkeypatch.setattr(finding_jobs, "get_loaded_job_count", fake_count)
+        monkeypatch.setattr(finding_jobs, "_safe_evaluate", fake_evaluate)
+        monkeypatch.setattr(finding_jobs.asyncio, "sleep", fake_sleep)
+
+        assert await scroll_to_load_more_jobs(timeout=1.0) is True
+        # 关键：没有任何一次 window.scrollTo
+        assert all("scrollTo" not in js for js in evaluate_calls)
+
+    asyncio.run(scenario())
+
+
+def test_wait_for_job_cards_gives_up_after_timeout(monkeypatch):
+    async def scenario():
+        async def always_zero():
+            return 0
+
+        async def fake_sleep(delay: float):
+            return None
+
+        monkeypatch.setattr(finding_jobs, "get_loaded_job_count", always_zero)
+        monkeypatch.setattr(finding_jobs.asyncio, "sleep", fake_sleep)
+
+        assert await _wait_for_job_cards(timeout=0.01) == 0
+
+    asyncio.run(scenario())
+
+
+def test_scroll_reports_no_progress_when_list_stays_empty(monkeypatch):
+    """列表一直没回来时返回 False，让调用方走"拿不到 JD"的正常计数。"""
+
+    async def scenario():
+        async def always_zero():
+            return 0
+
+        async def fake_evaluate(js: str, timeout: float = 10):
+            raise AssertionError("列表为空时不该去滚窗口")
+
+        async def fake_sleep(delay: float):
+            return None
+
+        monkeypatch.setattr(finding_jobs, "get_loaded_job_count", always_zero)
+        monkeypatch.setattr(finding_jobs, "_safe_evaluate", fake_evaluate)
+        monkeypatch.setattr(finding_jobs.asyncio, "sleep", fake_sleep)
+        monkeypatch.setattr(finding_jobs, "_wait_for_job_cards", lambda timeout=5.0: always_zero())
+
+        assert await scroll_to_load_more_jobs(timeout=1.0) is False
+
+    asyncio.run(scenario())
+
+
+# ---------- 页面卡在整页反复重载 ----------
+
+
+def test_record_document_origin_counts_distinct_documents_only():
+    samples: list = []
+    assert _record_document_origin(samples, 100.0, 0.0) == 1
+    # 同一个文档反复采样，不能重复计数（虚拟列表重渲染也是同一个文档）
+    assert _record_document_origin(samples, 100.0, 1.0) == 1
+    assert _record_document_origin(samples, 100.0, 2.0) == 1
+    # 拿不到 timeOrigin 时什么都不动
+    assert _record_document_origin(samples, None, 2.5) == 1
+    assert _record_document_origin(samples, 200.0, 3.0) == 2
+    assert _record_document_origin(samples, 300.0, 4.0) == 3
+    # 滚出窗口的老采样被清掉，只剩当前这个文档
+    assert _record_document_origin(samples, 400.0, 999.0) == 1
+
+
+def test_page_reloading_detected_after_repeated_new_documents(monkeypatch):
+    async def scenario():
+        origins = iter([1.0, 2.0, 3.0])
+
+        async def fake_origin():
+            return next(origins)
+
+        monkeypatch.setattr(finding_jobs, "_document_time_origin", fake_origin)
+        monkeypatch.setattr(finding_jobs, "_reload_probe_window", [])
+
+        await _raise_if_page_reloading()  # 第 1 个文档
+        await _raise_if_page_reloading()  # 第 2 个
+        try:
+            await _raise_if_page_reloading()  # 第 3 个 → 超过阈值
+        except PageReloadingError as e:
+            return str(e)
+        raise AssertionError("应该抛 PageReloadingError")
+
+    message = asyncio.run(scenario())
+    assert "整页反复重载" in message
+    # 报错信息要能指导用户下一步，而不是只丢一句异常名
+    assert "安全验证" in message
+    assert "user-data-dir" in message
+
+
+def test_rerender_without_navigation_never_triggers_reload_guard(monkeypatch):
+    """同一个文档里怎么采样都不该命中——虚拟列表重渲染不是整页重载。"""
+
+    async def scenario():
+        async def same_document():
+            return 42.0
+
+        monkeypatch.setattr(finding_jobs, "_document_time_origin", same_document)
+        monkeypatch.setattr(finding_jobs, "_reload_probe_window", [])
+
+        for _ in range(10):
+            await _raise_if_page_reloading()
+
+    asyncio.run(scenario())
+
+
+# ---------- 未登录直接停下 ----------
+
+
+def test_login_wait_seconds_default_is_300(monkeypatch):
+    monkeypatch.delenv("BOSS_LOGIN_TIMEOUT", raising=False)
+    assert _login_wait_seconds() == 300.0
+
+
+def test_login_wait_seconds_override_and_bad_values(monkeypatch):
+    monkeypatch.setenv("BOSS_LOGIN_TIMEOUT", "45")
+    assert _login_wait_seconds() == 45.0
+
+    # GUI 配置页能填任意字符串，非法值只能回退默认，不能把 run 弄崩
+    monkeypatch.setenv("BOSS_LOGIN_TIMEOUT", "not-a-number")
+    assert _login_wait_seconds() == 300.0
+
+    monkeypatch.setenv("BOSS_LOGIN_TIMEOUT", "-5")
+    assert _login_wait_seconds() == 0.0
+
+
+def test_log_in_raises_when_login_never_happens(monkeypatch):
+    """未登录且等不到扫码时必须抛错停下，而不是拿游客 feed 继续空跑。"""
+
+    class _FakeTab:
+        url = "https://www.zhipin.com/web/geek/job-recommend"
+
+        async def find(self, *args, **kwargs):
+            return None
+
+    async def never_logged_in():
+        return False
+
+    monkeypatch.setattr(finding_jobs, "_tab", _FakeTab())
+    monkeypatch.setattr(finding_jobs, "_is_logged_in", never_logged_in)
+    monkeypatch.setenv("BOSS_LOGIN_TIMEOUT", "0")
+
+    async def scenario():
+        try:
+            await log_in()
+        except LoginRequiredError as e:
+            return str(e)
+        raise AssertionError("log_in 应该抛 LoginRequiredError")
+
+    message = asyncio.run(scenario())
+    assert "没检测到登录态" in message
+    # 光说"超时"没用，要给出下一步怎么做
+    assert "登录" in message
+
+
+# ---------- 求职 tag 拆词 ----------
+
+
+def test_label_tokens_splits_chinese_and_ascii_separators():
+    assert _label_tokens("python，算法") == ["python", "算法"]
+    assert _label_tokens("python,算法") == ["python", "算法"]
+    assert _label_tokens("后端开发、算法/测试") == ["后端开发", "算法", "测试"]
+
+
+def test_label_tokens_keeps_single_and_handles_empty():
+    # 单个 tag 原样返回（BOSS 的 chip 本来就是单标签）
+    assert _label_tokens("后端开发(贵阳)") == ["后端开发(贵阳)"]
+    assert _label_tokens("   ") == []
+    assert _label_tokens("") == []
+    assert _label_tokens(None) == []
+
+
+# ---------- CDP session 过期自救 ----------
+
+
+def test_stale_session_error_detection():
+    assert _is_stale_session_error(
+        RuntimeError("ProtocolException: Session with given id not found. [code: -32001]")
+    )
+    assert _is_stale_session_error(RuntimeError("something [code: -32001]"))
+    assert not _is_stale_session_error(RuntimeError("Connection closed"))
+    assert not _is_stale_session_error(TimeoutError())
+
+
+class _FlakyTab:
+    """第一次 evaluate 抛 session 失效，重新 attach 后恢复正常。"""
+
+    def __init__(self, error: Exception | None = None, ok_payload: str = '{"ok": 1}'):
+        self.evaluate_calls = 0
+        self.attach_calls = 0
+        self._error = error
+        self._ok_payload = ok_payload
+
+    async def evaluate(self, js: str):
+        self.evaluate_calls += 1
+        if self._error is not None and self.evaluate_calls == 1:
+            raise self._error
+        return self._ok_payload
+
+    async def attach(self):
+        self.attach_calls += 1
+
+
+def test_safe_evaluate_reattaches_once_on_stale_session(monkeypatch):
+    """GUI 下偶发 -32001：必须重新 attach 后重试，否则登录判定永远读到空 dict。"""
+
+    async def scenario():
+        tab = _FlakyTab(RuntimeError("Session with given id not found. [code: -32001]"))
+        monkeypatch.setattr(finding_jobs, "_tab", tab)
+        result = await _safe_evaluate("1+1")
+        return tab, result
+
+    tab, result = asyncio.run(scenario())
+    assert result == {"ok": 1}
+    assert tab.attach_calls == 1
+    assert tab.evaluate_calls == 2
+
+
+def test_safe_evaluate_does_not_reattach_on_unrelated_error(monkeypatch):
+    async def scenario():
+        tab = _FlakyTab(RuntimeError("some other protocol error"))
+        monkeypatch.setattr(finding_jobs, "_tab", tab)
+        result = await _safe_evaluate("1+1")
+        return tab, result
+
+    tab, result = asyncio.run(scenario())
+    assert result == {}
+    assert tab.attach_calls == 0
+    assert tab.evaluate_calls == 1
+
+
+class _DeadTargetTab:
+    """target 已经不在了：evaluate 抛 -32001，attach 抛 -32602。"""
+
+    def __init__(self, url: str):
+        self.target = types.SimpleNamespace(url=url)
+        self.evaluate_calls = 0
+
+    async def evaluate(self, js: str):
+        self.evaluate_calls += 1
+        raise RuntimeError("Session with given id not found. [code: -32001]")
+
+    async def attach(self):
+        raise RuntimeError("No target with given id found [code: -32602]")
+
+
+class _LiveTab:
+    def __init__(self, url: str, payload: str = '{"ok": 9}'):
+        self.target = types.SimpleNamespace(url=url)
+        self.attach_calls = 0
+        self._payload = payload
+
+    async def evaluate(self, js: str):
+        return self._payload
+
+    async def attach(self):
+        self.attach_calls += 1
+
+
+class _FakeBrowser:
+    def __init__(self, tabs):
+        self.tabs = tabs
+
+    async def update_targets(self):
+        return None
+
+
+def test_safe_evaluate_switches_tab_when_target_is_gone(monkeypatch):
+    """-32602（target 没了）时 attach 救不回来，必须另接一个页面 target。"""
+
+    async def scenario():
+        dead = _DeadTargetTab("https://www.zhipin.com/web/geek/job-recommend")
+        newtab = _LiveTab("chrome://newtab/")
+        live = _LiveTab("https://www.zhipin.com/web/geek/jobs")
+        monkeypatch.setattr(finding_jobs, "_tab", dead)
+        monkeypatch.setattr(finding_jobs, "_browser", _FakeBrowser([newtab, live]))
+        result = await _safe_evaluate("1+1")
+        return live, result
+
+    live, result = asyncio.run(scenario())
+    assert result == {"ok": 9}
+    # 接的是真页面，不是 chrome://newtab/
+    assert finding_jobs._tab is live
+    assert live.attach_calls == 1

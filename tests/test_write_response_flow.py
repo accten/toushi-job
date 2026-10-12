@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import types
 from dataclasses import dataclass
 
 import pytest
@@ -307,7 +308,7 @@ def test_sent_greeting_is_logged_even_when_return_to_list_fails(monkeypatch):
         async def get_text(selector: str, timeout: float = 5):
             return "立即沟通"
 
-        async def click(xpath: str, timeout: float = 10):
+        async def click(timeout: float = 10):
             return True
 
         async def wait(selector: str, timeout: float = 50):
@@ -323,7 +324,7 @@ def test_sent_greeting_is_logged_even_when_return_to_list_fails(monkeypatch):
             write_response.finding_jobs, "get_job_description_by_index", get_jd
         )
         monkeypatch.setattr(write_response.finding_jobs, "get_text_by_css", get_text)
-        monkeypatch.setattr(write_response.finding_jobs, "click_by_xpath", click)
+        monkeypatch.setattr(write_response.finding_jobs, "click_contact_button", click)
         monkeypatch.setattr(write_response.finding_jobs, "wait_for_css", wait)
         monkeypatch.setattr(
             write_response.finding_jobs, "send_chat_message", send_message
@@ -366,7 +367,7 @@ def test_send_limit_stops_after_configured_successful_sends(monkeypatch):
         async def get_text(selector: str, timeout: float = 5):
             return "立即沟通"
 
-        async def click(xpath: str, timeout: float = 10):
+        async def click(timeout: float = 10):
             return True
 
         async def wait(selector: str, timeout: float = 50):
@@ -380,7 +381,7 @@ def test_send_limit_stops_after_configured_successful_sends(monkeypatch):
             write_response.finding_jobs, "get_job_description_by_index", get_jd
         )
         monkeypatch.setattr(write_response.finding_jobs, "get_text_by_css", get_text)
-        monkeypatch.setattr(write_response.finding_jobs, "click_by_xpath", click)
+        monkeypatch.setattr(write_response.finding_jobs, "click_contact_button", click)
         monkeypatch.setattr(write_response.finding_jobs, "wait_for_css", wait)
         monkeypatch.setattr(write_response, "send_response_and_go_back", send_response)
 
@@ -414,7 +415,7 @@ def test_successful_send_waits_random_delay_between_jobs(monkeypatch):
         async def get_text(selector: str, timeout: float = 5):
             return "立即沟通"
 
-        async def click(xpath: str, timeout: float = 10):
+        async def click(timeout: float = 10):
             return True
 
         async def wait(selector: str, timeout: float = 50):
@@ -434,7 +435,7 @@ def test_successful_send_waits_random_delay_between_jobs(monkeypatch):
             write_response.finding_jobs, "get_job_description_by_index", get_jd
         )
         monkeypatch.setattr(write_response.finding_jobs, "get_text_by_css", get_text)
-        monkeypatch.setattr(write_response.finding_jobs, "click_by_xpath", click)
+        monkeypatch.setattr(write_response.finding_jobs, "click_contact_button", click)
         monkeypatch.setattr(write_response.finding_jobs, "wait_for_css", wait)
         monkeypatch.setattr(
             write_response.finding_jobs, "scroll_to_load_more_jobs", no_scroll
@@ -453,3 +454,215 @@ def test_successful_send_waits_random_delay_between_jobs(monkeypatch):
         assert 23.5 in patch.sleeps
 
     asyncio.run(scenario())
+
+
+# ---------- 智联（简化模式：只投递，不发招呼语） ----------
+
+
+def _patch_zhilian(
+    monkeypatch, *, applied: bool = True, filter_ok: bool = True, with_filter: bool = False
+):
+    """把 ``write_response.finding_jobs`` 整体换成"智联那套"。
+
+    真实运行时 ``cli.run_provider`` 会做同样的替换（``wr_module.finding_jobs =
+    zhilian_finding_jobs``）—— 所以不能只 patch 单个函数：BOSS 模块**没有 click_apply**，
+    智联模块才有。
+    """
+    sleeps: list[float] = []
+    events: list[tuple[str, dict]] = []
+    applied_calls: list[int] = []
+    log_records: list[dict] = []
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def fake_sleep(delay: float):
+        sleeps.append(delay)
+
+    async def cards_ready(timeout: float = 30):
+        return True
+
+    async def get_jd(index: int):
+        return "岗位%d JD 后端开发 Go Redis" % index if index <= 2 else None
+
+    async def loaded_count():
+        return 2
+
+    async def scroll_more():
+        return False
+
+    async def click_apply(timeout: float = 10):
+        applied_calls.append(1)
+        return applied
+
+    fake_module = types.SimpleNamespace(
+        open_browser_with_options=noop,
+        log_in=noop,
+        select_dropdown_option=noop,
+        wait_for_real_job_cards=cards_ready,
+        reload_page=noop,
+        get_job_description_by_index=get_jd,
+        get_loaded_job_count=loaded_count,
+        scroll_to_load_more_jobs=scroll_more,
+        click_apply=click_apply,
+    )
+    monkeypatch.setattr(write_response, "finding_jobs", fake_module)
+    monkeypatch.setattr(write_response.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(
+        write_response,
+        "_emit_progress",
+        lambda kind, **payload: events.append((kind, payload)),
+    )
+    monkeypatch.setattr(write_response, "current_provider_label", lambda: "test")
+    monkeypatch.setattr(
+        write_response, "log_attempt", lambda **kw: log_records.append(kw)
+    )
+    if with_filter:
+        # should_apply 是同步函数（调用方用 asyncio.to_thread 包着）
+        monkeypatch.setattr(
+            write_response,
+            "should_apply",
+            lambda *a, **k: (
+                filter_ok,
+                {
+                    "stage": "llm_score",
+                    "score": 85 if filter_ok else 30,
+                    "threshold": 70,
+                    "reason": "测试",
+                    "matched_keywords": ["python"],
+                },
+            ),
+        )
+    return BrowserPatch(sleeps=sleeps, events=events), applied_calls, log_records
+
+
+def test_zhilian_dry_run_never_clicks_apply(monkeypatch):
+    """勾了 Dry Run 就绝不能真投递 —— 以前这条分支压根不看 dry_run。"""
+
+    async def scenario():
+        patch, applied_calls, records = _patch_zhilian(monkeypatch)
+        await write_response.send_job_descriptions_to_chat(
+            usr_name="测试",
+            url="https://example.test",
+            browser_type="chrome",
+            label="",
+            dry_run=True,
+            send_message=False,
+        )
+        return patch, applied_calls, records
+
+    patch, applied_calls, records = asyncio.run(scenario())
+    assert applied_calls == []          # 一次都没点投递
+    assert records, "至少要记录一条"
+    assert all(r["dry_run"] is True and r["sent"] is False for r in records)
+    assert all(r["validation"] is not None for r in records)
+    assert any(
+        kind == "letter_sent" and payload.get("status") == "dry_run"
+        for kind, payload in patch.events
+    )
+
+
+def test_zhilian_real_apply_does_not_crash_on_empty_validation(monkeypatch):
+    """以前这里传 validation=None，第一次投递成功就 AttributeError 崩掉整个 run。"""
+
+    async def scenario():
+        patch, applied_calls, records = _patch_zhilian(monkeypatch)
+        await write_response.send_job_descriptions_to_chat(
+            usr_name="测试",
+            url="https://example.test",
+            browser_type="chrome",
+            label="",
+            dry_run=False,
+            send_message=False,
+        )
+        return patch, applied_calls, records
+
+    patch, applied_calls, records = asyncio.run(scenario())
+    assert applied_calls, "非 dry-run 就该真的点投递"
+    assert all(r["dry_run"] is False and r["sent"] is True for r in records)
+    # 没崩 = 通过：真的走完了整轮（有 applied 事件、没有 error 事件）
+    assert any(
+        kind == "letter_sent" and payload.get("status") == "applied"
+        for kind, payload in patch.events
+    )
+    assert not any(kind == "error" for kind, _ in patch.events)
+
+
+def test_zhilian_skips_job_rejected_by_llm_filter(monkeypatch):
+    """LLM 评分不通过的岗位**绝不能投出去** —— 投递不可逆，招聘者那边直接收到。"""
+
+    async def scenario():
+        patch, applied_calls, records = _patch_zhilian(
+            monkeypatch, filter_ok=False, with_filter=True
+        )
+        await write_response.send_job_descriptions_to_chat(
+            usr_name="测试",
+            url="https://example.test",
+            browser_type="chrome",
+            label="",
+            dry_run=False,
+            send_message=False,
+            resume_text="Python 后端简历，做过 RAG",
+            resume_keywords=["python"],
+        )
+        return patch, applied_calls, records
+
+    patch, applied_calls, records = asyncio.run(scenario())
+    assert applied_calls == []                     # 一次都没点投递
+    assert records == []                           # 没投也没写 audit
+    assert any(kind == "job_skipped" for kind, _ in patch.events)
+    assert not any(kind == "letter_sent" for kind, _ in patch.events)
+
+
+def test_zhilian_applies_when_llm_filter_passes(monkeypatch):
+    async def scenario():
+        patch, applied_calls, records = _patch_zhilian(
+            monkeypatch, filter_ok=True, with_filter=True
+        )
+        await write_response.send_job_descriptions_to_chat(
+            usr_name="测试",
+            url="https://example.test",
+            browser_type="chrome",
+            label="",
+            dry_run=False,
+            send_message=False,
+            resume_text="Python 后端简历，做过 RAG",
+            resume_keywords=["python"],
+        )
+        return patch, applied_calls, records
+
+    patch, applied_calls, records = asyncio.run(scenario())
+    assert applied_calls, "过滤通过就该点投递"
+    assert records and all(r["sent"] is True for r in records)
+    # 事件里要带上真实评分，GUI 才看得到"这条为什么投了"
+    assert any(
+        kind == "letter_sent" and payload.get("score") == 85
+        for kind, payload in patch.events
+    )
+
+
+# ---------- 岗位间隔随机化 ----------
+
+
+def test_job_gap_range_defaults_to_2_6(monkeypatch):
+    monkeypatch.delenv("BOSS_JOB_GAP_MIN", raising=False)
+    monkeypatch.delenv("BOSS_JOB_GAP_MAX", raising=False)
+    assert write_response._job_gap_range() == (2.0, 6.0)
+
+
+def test_job_gap_range_reads_env_and_swaps_reversed(monkeypatch):
+    monkeypatch.setenv("BOSS_JOB_GAP_MIN", "1.5")
+    monkeypatch.setenv("BOSS_JOB_GAP_MAX", "4")
+    assert write_response._job_gap_range() == (1.5, 4.0)
+
+    # MAX < MIN 时交换，别让 random.uniform 收到空区间
+    monkeypatch.setenv("BOSS_JOB_GAP_MIN", "9")
+    monkeypatch.setenv("BOSS_JOB_GAP_MAX", "3")
+    assert write_response._job_gap_range() == (3.0, 9.0)
+
+
+def test_job_gap_range_ignores_garbage(monkeypatch):
+    monkeypatch.setenv("BOSS_JOB_GAP_MIN", "abc")
+    monkeypatch.setenv("BOSS_JOB_GAP_MAX", "-5")
+    # 非法值回退默认（2.0）；负数收敛到 0 → 0 < 2，交换成 (0.0, 2.0)，不会是空区间
+    assert write_response._job_gap_range() == (0.0, 2.0)

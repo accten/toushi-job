@@ -12,12 +12,22 @@
 """
 
 import hashlib
+import os
 from pathlib import Path
+
+# Set HF_HOME to a local directory within the project to ensure offline use
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]  # Go up two levels from this file to project root
+_DEFAULT_HF_HOME = _PROJECT_ROOT / "models"
+if "HF_HOME" not in os.environ:
+    os.environ["HF_HOME"] = str(_DEFAULT_HF_HOME)
+
+# Set the embedding model to use the local snapshot to avoid any download attempts
+_LOCAL_MODEL_SNAPSHOT = _DEFAULT_HF_HOME / "hub" / "models--sentence-transformers--all-mpnet-base-v2" / "snapshots" / "e8c3b32edf5434bc2275fc9bab85f82640a19130"
+EMBED_MODEL_NAME = str(_LOCAL_MODEL_SNAPSHOT)
 
 import chromadb
 from sentence_transformers import SentenceTransformer
 
-EMBED_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
 COLLECTION_NAME = "resume"
 
 _embedder: SentenceTransformer | None = None
@@ -26,7 +36,7 @@ _embedder: SentenceTransformer | None = None
 def _get_embedder() -> SentenceTransformer:
     global _embedder
     if _embedder is None:
-        _embedder = SentenceTransformer(EMBED_MODEL_NAME)
+        _embedder = SentenceTransformer(EMBED_MODEL_NAME, local_files_only=True)
     return _embedder
 
 
@@ -87,10 +97,10 @@ def embed_resume(resume_text: str, base_dir: str = "./vectorstores") -> VectorSt
     existing = {c.name for c in client.list_collections()}
 
     if COLLECTION_NAME in existing:
-        print("✅ 加载已存在向量库")
+        print("[OK] 加载已存在向量库")
         collection = client.get_collection(COLLECTION_NAME)
     else:
-        print("❌ 不存在向量库，重新向量化")
+        print("[WARN] 不存在向量库，重新向量化")
         chunks = split_text(resume_text)
         if not chunks:
             raise ValueError("No text extracted from resume")
@@ -102,6 +112,6 @@ def embed_resume(resume_text: str, base_dir: str = "./vectorstores") -> VectorSt
             embeddings=embeddings,
             ids=[f"chunk-{i}" for i in range(len(chunks))],
         )
-        print(f"✅ 已保存向量库到：{persist_dir}")
+        print(f"[OK] 已保存向量库到：{persist_dir}")
 
     return VectorStore(collection)

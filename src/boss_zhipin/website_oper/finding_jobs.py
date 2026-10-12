@@ -89,7 +89,7 @@ def get_tab() -> uc.Tab | None:
 def get_driver():
     raise RuntimeError(
         "get_driver() 已移除：项目已迁到 nodriver，没有 Selenium driver。"
-        "请改用 finding_jobs 里的 async helper（get_text_by_css/click_by_xpath/"
+        "请改用 finding_jobs 里的 async helper（get_text_by_css/click_contact_button/"
         "wait_for_css/send_chat_message/navigate_back）。"
     )
 
@@ -98,18 +98,36 @@ def _on_login_page(url: str) -> bool:
     return any(s in url for s in ("/web/user/", "passport-zp", "/login"))
 
 
+# 判定"页面真的渲染出来了"的最小正文长度。BOSS 整页导航的瞬间，DOM 会先是一具
+# 空壳（readyState 可能已经是 complete，但 body 里几乎没内容）——那时候三个未登录
+# 信号一个都查不到，"没有信号"就会被误读成"已登录"。
+# 实测踩过：未登录的一轮里 log_in 报「检测到已登录，跳过扫码」，而页面顶部明明写着
+# 「登录/注册」，于是主流程直接开抓游客推荐流。
+_MIN_RENDERED_BODY_LEN = 200
+
+
 def _is_logged_in_from_page_state(url: str, info: dict) -> bool:
     """从 URL + DOM 探测结果判断登录态。
 
     BOSS 未登录时不一定停在登录页：可能落在职位列表页，但顶部仍有
     "登录/注册"，详情正文也会显示"登录查看完整内容"。这些都必须判为未登录，
     否则主流程会误以为已登录，跳过扫码等待后直接开始抓 JD。
+
+    **页面没渲染出来时一律判未登录**：空白文档里什么信号都查不到，而"没有未登录
+    信号"不等于"已登录"。宁可多等一次扫码，也不能拿游客 feed 空跑。
     """
     if _on_login_page(url):
+        return False
+    if (info.get("bodyLength") or 0) < _MIN_RENDERED_BODY_LEN:
+        return False
+    ready = info.get("readyState")
+    if ready is not None and ready != "complete":
         return False
     if info.get("loginWallVisible"):
         return False
     if info.get("headerLoginVisible"):
+        return False
+    if info.get("headerLoginText"):
         return False
     if info.get("loginRequiredVisible"):
         return False
@@ -154,6 +172,11 @@ async def _is_logged_in() -> bool:
       );
       const bodyText = document.body ? document.body.innerText || '' : '';
       return {
+        // 页面有没有真的渲染出来（见 _MIN_RENDERED_BODY_LEN）：空白文档不能当已登录
+        readyState: document.readyState,
+        bodyLength: bodyText.length,
+        // 顶部「登录/注册」是未登录最直接的证据，不再只靠 class 名兜
+        headerLoginText: bodyText.includes('登录/注册'),
         loginWallVisible: visible(wall),
         headerLoginVisible: visible(headerLogin),
         loginRequiredVisible: bodyText.includes('登录查看完整内容')
@@ -164,7 +187,7 @@ async def _is_logged_in() -> bool:
     info = await _safe_evaluate(js, timeout=5)
     logged_in = _is_logged_in_from_page_state(_tab.url, info)
     if not logged_in:
-        log.info("页面上有未登录信号 %s → 判未登录，走扫码", info)
+        log.info("判定未登录（页面信号 %s）→ 先让用户登录，不碰岗位列表", info)
         return False
     return True
 
@@ -289,13 +312,40 @@ async def _start_browser_with_retry(config: Config, attempts: int = 3) -> uc.Bro
     last_err: Exception | None = None
     for i in range(1, attempts + 1):
         try:
-            return await uc.start(config=config)
+            browser = await uc.start(config=config)
+            # 额外验证：确保浏览器实际上可以连接
+            try:
+                # 获取第一个tab来验证连接
+                if browser.tabs:
+                    tab = browser.tabs[0]
+                    await tab.evaluate("1 + 1")
+                    log.debug("浏览器连接验证成功")
+                else:
+                    # 如果没有tab，等待一下再试
+                    await asyncio.sleep(1.0)
+                    if browser.tabs:
+                        tab = browser.tabs[0]
+                        await tab.evaluate("1 + 1")
+                        log.debug("浏览器连接验证成功")
+                    else:
+                        raise Exception("No tabs available after startup")
+            except Exception as verify_err:
+                log.warning("浏览器已启动但CDP连接验证失败（第 %d/%d 次）：%s", i, attempts, verify_err)
+                # 如果是连接验证失败，我们仍然重试，因为Chrome可能需要更时间来完全启动
+                if i >= attempts:
+                    raise
+                await asyncio.sleep(1.0 * i)  # 短暂等待后重试
+                continue
+
+            return browser
         except Exception as e:  # noqa: BLE001
             last_err = e
             log.warning("浏览器启动/连接失败（第 %d/%d 次）：%s", i, attempts, e)
             _reap_profile_chrome(config.user_data_dir)
             if i < attempts:
-                await asyncio.sleep(2.0 * i)
+                # 指数退避加抖动，避免厉害模式
+                delay = (2.0 ** i) + (0.5 * i)  # 2, 4.5, 8秒等
+                await asyncio.sleep(min(delay, 10.0))  # 最大10秒
     assert last_err is not None
     raise last_err
 
@@ -324,23 +374,74 @@ async def open_browser_with_options(url: str, browser: str) -> None:
     else:
         log.warning("Chrome sandbox: disabled（root 或 BOSS_NO_SANDBOX=1，按需使用）")
     _browser = await _start_browser_with_retry(config)
+    # 新浏览器会话 = 新的重载探测窗口，别把上一次 run 的采样带进来。
+    _reload_probe_window.clear()
 
-    # 持久化 profile 启动时 Chrome 会把上次的 tab 都恢复出来；脚本控制的 tab
-    # 直接放到一个独立的新窗口里，跟历史窗口井水不犯河水，新窗口默认抢焦。
+    # 自己开一个窗口放控制 tab，不去猜启动时那些 tab 哪个是我们要的。
+    #
+    # 这么写是被三件事逼出来的，改之前先看清楚：
+    #
+    # 1. **不要事后去关"多余"的窗口**。在 GUI 的 portal loop 里
+    #    （`gui.runner.start_run` 起的 asyncio task），`tab.close()` 会把我们自己的
+    #    CDP 连接一起带走 —— 之后每次 evaluate 都 ConnectionClosedError，表现成
+    #    "Chrome 窗口打开两三秒就自己关了、GUI 只显示个 browser_started"。CLI 的
+    #    `uc.loop().run_until_complete` 路径碰不到，所以只在 GUI 里炸。多出来的那个
+    #    窗口就让它留着。
+    # 2. **不要 `new_tab=False`**（直接导航启动时那个 tab）。那个 tab 常常是
+    #    `chrome://newtab/`，而 CDP 把它导航到网页并不可靠：`Page.navigate` 返回
+    #    frameId 看着像成功，文档其实还停在 new-tab-page，用户看到的就是"只开了个
+    #    浏览器主窗口、没跳到 BOSS"，脚本一路读到 bodyLength=0。
+    # 3. 持久化 profile 还会把上次的会话恢复出来，启动时的 `browser.tabs` 顺序
+    #    不稳定；自己开一个窗口能保证拿到的一定是我们在用的那个。
     _tab = await _browser.get(url, new_window=True)
     try:
         await _tab.activate()
         await _tab.bring_to_front()
     except Exception as e:
         log.warning("激活控制 tab 失败（%s），不影响后续操作", e)
-
+    # 这里原来会主动 enable DOM/Page/Input/Runtime 四个 CDP 域（为了绕当时 xpath 报的
+    # 'DOM.enable' wasn't found）。现在主路径全部走 JS，那四个域一个都不需要了 ——
+    # 而且**主动开 Runtime/DOM 是典型的自动化探测面**，风控看得见。少开一个是一个。
     log.info("页面加载中... 当前URL: %s", _tab.url)
     stable_url = await _wait_url_stable(stable_for=2.0, timeout=30)
     log.info("页面已稳定，当前URL: %s", stable_url)
 
 
+class LoginRequiredError(RuntimeError):
+    """未登录、且扫码等待超时。
+
+    单独一个异常类型：以前这里只 ``log.warning`` 一句就放行，主循环会拿着
+    **游客通用推荐 feed** 一路空跑（岗位跟简历全对不上 → 一条招呼语都发不出去），
+    用户只看到"窗口一直在跳"却不知道卡在哪。现在直接抛出来，让 GUI / CLI 停下
+    并把原因打给用户。仍是 ``RuntimeError`` 子类，对外行为不变。
+    """
+
+
+def _login_wait_seconds() -> float:
+    """扫码等待时长（秒）。``BOSS_LOGIN_TIMEOUT`` 覆盖，默认 300。
+
+    非法值（非数字 / 负数）回退默认并告警——GUI 配置页能填任意字符串，不能让它
+    把整个 run 弄崩。
+    """
+    raw = os.getenv("BOSS_LOGIN_TIMEOUT", "").strip()
+    if not raw:
+        return 300.0
+    try:
+        value = float(raw)
+    except ValueError:
+        log.warning("BOSS_LOGIN_TIMEOUT=%r 不是数字，回退默认 300 秒", raw)
+        return 300.0
+    if value < 0:
+        log.warning("BOSS_LOGIN_TIMEOUT=%r 为负，按 0 处理", raw)
+        return 0.0
+    return value
+
+
 async def log_in() -> None:
-    """识别登录状态；未登录则点开微信扫码，等用户扫码登录。"""
+    """识别登录状态；未登录则点开微信扫码，等用户扫码登录。
+
+    超时未登录抛 ``LoginRequiredError``（见该类 docstring）。
+    """
     if await _is_logged_in():
         log.info("检测到已登录（profile: %s），跳过扫码", CHROME_PROFILE_DIR)
         return
@@ -368,17 +469,93 @@ async def log_in() -> None:
     except Exception as e:
         log.warning("查找微信入口出错（%s），请手动选择登录方式", e)
 
-    log.info("等待扫码登录... (最多 300 秒)")
-    deadline = asyncio.get_event_loop().time() + 300
+    wait_seconds = _login_wait_seconds()
+    log.warning(
+        "未检测到登录态：请在打开的 Chrome 窗口里登录（微信扫码或账号密码；"
+        "如果弹出安全验证，也一并过掉）。程序每 2 秒检查一次，登录成功后自动继续，"
+        "最多等 %.0f 秒（BOSS_LOGIN_TIMEOUT 可调）。",
+        wait_seconds,
+    )
+    deadline = asyncio.get_event_loop().time() + wait_seconds
     while asyncio.get_event_loop().time() < deadline:
         if await _is_logged_in():
             log.info("登录成功！cookie 已写入 profile，下次跑应该不用再扫")
             return
         await asyncio.sleep(2)
-    log.warning("登录超时，请确认是否已扫码登录")
+    raise LoginRequiredError(
+        f"等了 {wait_seconds:.0f} 秒仍没检测到登录态，已停下（没有拿游客 feed 空跑）。"
+        "请登录后重跑。如果那个 Chrome 窗口本身在不停整页刷新（地址栏一闪而过 "
+        "security.html / _security_check），是 BOSS 风控在反复要求安全验证——"
+        "脚本过不了，需要人工：先关掉脚本，用同一个 profile 手动开一个不带调试端口的 "
+        "Chrome（chrome.exe --user-data-dir=<profile 目录>），在里面过掉验证并登录，"
+        "再回来重跑脚本。"
+    )
 
 
 # ---------- JS 评估辅助 ----------
+
+
+def _is_stale_session_error(exc: BaseException) -> bool:
+    """Chrome 报 -32001 / "Session with given id not found" —— 我们的 CDP session 过期了。
+
+    纯函数，便于单测。
+    """
+    text = str(exc)
+    return "Session with given id not found" in text or "-32001" in text
+
+
+async def _refresh_tab() -> bool:
+    """当前 tab 的 target 已经没了，从 browser 里另挑一个页面 target 接上。
+
+    Chrome 报 `No target with given id found` 就是这种情况：我们手里那个 target 被换掉
+    了（页面被风控/会话恢复重新创建）。``attach()`` 救不了一个不存在的 target，只能
+    重新拿一个；``newtab`` 那种空页优先排除。
+    """
+    global _tab
+    if _browser is None:
+        return False
+    try:
+        await _browser.update_targets()
+    except Exception as e:  # noqa: BLE001
+        log.warning("刷新 target 列表失败：%s", e)
+    candidates = [
+        t for t in (_browser.tabs or [])
+        if "newtab" not in (getattr(t.target, "url", "") or "")
+    ] or list(_browser.tabs or [])
+    if not candidates:
+        return False
+    _tab = candidates[0]
+    try:
+        await _tab.attach()
+    except Exception as e:  # noqa: BLE001
+        log.warning("接入新 tab 失败：%s", e)
+        return False
+    log.info("控制 tab 的 target 已失效，已改接 %s", (getattr(_tab.target, "url", "") or "")[:80])
+    return True
+
+
+async def _recover_tab() -> bool:
+    """CDP 会话/目标失效后的自愈：先重新 attach，不行就换一个 target 接上。
+
+    ``Connection.attach()`` 每次都会重新 ``Target.attachToTarget`` 拿一个新 session id
+    （不是"已附加就跳过"），所以 session 过期（-32001）再调一次就能救回来；
+    如果连 target 都没了（-32602），就只能换一个 tab。
+
+    实测在 GUI 的 portal loop 下这两种失效都会偶发 —— 不救的话 evaluate 全返回空
+    dict，登录判定永远"未登录"，整个 run 卡在等待登录里空转，页面上看着"没反应"。
+    """
+    if _tab is None:
+        return False
+    try:
+        await _tab.attach()
+        log.info("CDP session 失效，已重新 attach 控制 tab")
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("重新 attach 控制 tab 失败（%s），改为另接一个 tab", e)
+    return await _refresh_tab()
+
+
+_UNSET = object()
 
 
 async def _safe_evaluate(js: str, timeout: float = 10) -> dict:
@@ -386,15 +563,25 @@ async def _safe_evaluate(js: str, timeout: float = 10) -> dict:
 
     自带 ``asyncio.wait_for`` 兜底 + JSON 解析容错 —— 永远不抛、永远返回 dict
     （失败时空 dict）。
+
+    session 过期（-32001）会重新 attach 后再试一次：这是 GUI 下偶发但致命的一种
+    失败 —— 不救的话登录判定永远拿到空 dict，整个 run 就卡在"等待登录"里空转。
     """
     js_head = js.strip()[:80].replace("\n", " ")
-    try:
-        raw = await asyncio.wait_for(_tab.evaluate(js), timeout=timeout)
-    except asyncio.TimeoutError:
-        log.warning("evaluate 超过 %ss 没返回（JS: %s...）", timeout, js_head)
-        return {}
-    except Exception as e:
-        log.warning("evaluate 抛 %s: %s（JS: %s...）", type(e).__name__, e, js_head)
+    raw = _UNSET
+    for attempt in (1, 2):
+        try:
+            raw = await asyncio.wait_for(_tab.evaluate(js), timeout=timeout)
+            break
+        except asyncio.TimeoutError:
+            log.warning("evaluate 超过 %ss 没返回（JS: %s...）", timeout, js_head)
+            return {}
+        except Exception as e:  # noqa: BLE001
+            if attempt == 1 and _is_stale_session_error(e) and await _recover_tab():
+                continue
+            log.warning("evaluate 抛 %s: %s（JS: %s...）", type(e).__name__, e, js_head)
+            return {}
+    if raw is _UNSET:
         return {}
     if isinstance(raw, tuple):
         raw = raw[0]
@@ -460,63 +647,135 @@ async def _js_wait_text(
     return None
 
 
-async def _xpath_safe(xp: str, timeout: float = 3.0) -> list:
-    """``tab.xpath`` 的兜底封装（保留给 ``select_dropdown_option`` 用，主路径已不依赖它）。"""
-    try:
-        result = await asyncio.wait_for(
-            _tab.xpath(xp, timeout=timeout),
-            timeout=timeout + 2,
-        )
-        return result or []
-    except asyncio.TimeoutError:
-        log.warning("xpath 超时: %s", xp[:80])
-        return []
-    except Exception as e:
-        log.warning("xpath 出错: %s: %s", type(e).__name__, e)
-        return []
-
-
 # ---------- 业务 helper ----------
 
 
+_LABEL_SEPARATORS = "，,、/|;；"
+
+
+def _label_tokens(label: str) -> list[str]:
+    """把用户填的 label 拆成候选 tag：「python，算法」→ ['python', '算法']。
+
+    纯函数，便于单测。BOSS 的求职 tag chip 是**单个**标签（"后端开发(贵阳)"），而用户
+    习惯在 BOSS_LABEL 里写逗号/顿号分隔的一串，拿整串去比永远匹配不上。
+    """
+    text = (label or "").strip()
+    tokens: list[str] = []
+    buf = ""
+    for ch in text:
+        if ch in _LABEL_SEPARATORS:
+            if buf.strip():
+                tokens.append(buf.strip())
+            buf = ""
+        else:
+            buf += ch
+    if buf.strip():
+        tokens.append(buf.strip())
+    return tokens
+
+
+# 当前 BOSS（2026）职位页的求职 tag chip 是 ``a.expect-item``，容器 `.expect-list` /
+# `.c-expect-select`，「更多」入口是 `.expect-select-filter`。老代码用 xpath 找
+# `recommend-job-btn` + `has-tooltip`，那两个 class 早就不存在了（实测页面上一个都选不到）。
+_TAG_ITEM_SELECTOR = ".expect-item, .expect-list a, .expect-list li, .c-expect-select a"
+
+
+def _click_tag_js(tokens: list[str]) -> str:
+    """生成"按文本点求职 tag chip"的 JS：命中就 click，并把可见候选一起回传。
+
+    点击在 JS 里一次做完（不用先查索引再点），避免两次 evaluate 之间 DOM 变了导致
+    点错元素。
+    """
+    return (
+        "JSON.stringify((() => {\n"
+        "  const norm = (s) => (s || '').replace(/\\s+/g, '');\n"
+        f"  const els = Array.from(document.querySelectorAll({json.dumps(_TAG_ITEM_SELECTOR)}));\n"
+        f"  const wanted = {json.dumps(tokens, ensure_ascii=False)};\n"
+        "  const available = [];\n"
+        "  for (const el of els) {\n"
+        "    const r = el.getBoundingClientRect();\n"
+        "    if (!(r.width > 0 && r.height > 0)) continue;\n"
+        "    const text = norm(el.innerText || el.textContent || '');\n"
+        "    if (!text) continue;\n"
+        "    if (!available.includes(text)) available.push(text);\n"
+        "    if (wanted.some((w) => text === w || text.includes(w))) {\n"
+        "      el.click();\n"
+        "      return {ok: true, clicked: text, available};\n"
+        "    }\n"
+        "  }\n"
+        "  return {ok: false, clicked: null, available};\n"
+        "})())"
+    )
+
+
+async def _click_expect_tag(tokens: list[str], log_available: bool = True) -> bool:
+    """按文本点击求职 tag chip；返回是否点到。
+
+    ``log_available=False`` 时不打候选列表 —— 重试期间每个 tick 都打一遍太吵，
+    只在最终放弃前打一次。
+    """
+    result = await _safe_evaluate(_click_tag_js(tokens), timeout=5)
+    if result.get("ok"):
+        log.info("    → 命中 tag chip %r，已点击", result.get("clicked"))
+        return True
+    if log_available:
+        if result.get("available"):
+            log.info("    当前可见 tag chip：%s", "、".join(result["available"]))
+        else:
+            log.info("    页面上没找到求职 tag chip")
+    return False
+
+
+# chip 是 SPA 异步渲染出来的：页面刚打开时经常一个都还没挂上去，实测要 3~5 秒
+# 才排出来。多等几秒远好过悄悄退回默认 feed（那等于 tag 白设了）。
+_TAG_LOOKUP_ATTEMPTS = 5
+
+
 async def select_dropdown_option(label: str) -> None:
-    """空 label 表示用 BOSS 默认推荐 feed，不主动选 tag。"""
+    """选中求职 tag（``BOSS_LABEL``）；空 label 表示沿用 BOSS 默认推荐 feed。
+
+    **全程走 JS/CSS，不再用 ``tab.xpath``**：那条路在当前 Chrome 上第一步就抛
+    ``ProtocolException: 'DOM.enable' wasn't found``（-32601），三条路径全挂在开头，
+    结果永远 fallback 到默认推荐 feed —— 用户填的 tag 形同虚设，feed 里全是跟简历无关
+    的岗位，LLM 全判低分跳过，一条招呼语都发不出去。
+    """
     if not label:
         log.info("[select_dropdown_option] label 为空，沿用当前推荐 feed")
         return
-    log.info("[select_dropdown_option] label=%r", label)
 
-    log.info("  路径 1: 找推荐 tag chip ...")
-    chip_xp = (
-        "//*[contains(@class,'recommend-job-btn') and contains(@class,'has-tooltip')]"
-    )
-    chips = await _xpath_safe(chip_xp, timeout=3)
-    log.info("    找到 %d 个 tag chip", len(chips))
-    for el in chips:
-        text = (el.text or "").strip()
-        if label in text:
-            log.info("    → 命中 %r，点击", text)
-            await el.click()
-            return
+    tokens = _label_tokens(label)
+    log.info("[select_dropdown_option] label=%r → 候选 tag %s", label, tokens)
 
-    log.info("  路径 2: 找下拉菜单触发器 ...")
-    trigger = await _xpath_safe(
-        "//*[@id='wrap']/div[2]/div[1]/div/div[1]/div", timeout=3
-    )
-    if trigger:
-        log.info("    → 点开下拉")
-        await trigger[0].click()
-        await _xpath_safe("//ul[contains(@class,'dropdown-expect-list')]", timeout=3)
-        options = await _xpath_safe(f"//li[contains(text(), '{label}')]", timeout=3)
-        if options:
-            log.info("    → 命中下拉 option %r，点击", label)
-            await options[0].click()
+    log.info("  路径 1: 直接在求职 tag chip 里找 ...")
+    for attempt in range(1, _TAG_LOOKUP_ATTEMPTS + 1):
+        if await _click_expect_tag(tokens, log_available=False):
             return
-        log.info("    下拉里没有 %r", label)
+        if attempt < _TAG_LOOKUP_ATTEMPTS:
+            # chip 还没渲染出来，等一下再找（实测差一两秒就从「只有推荐」变成整排）
+            await asyncio.sleep(1.0)
+
+    log.info("  路径 2: chip 可能折在「更多」里，点开再找一次 ...")
+    more = await _safe_evaluate(
+        "JSON.stringify((() => {"
+        "  const el = document.querySelector('.expect-select-filter');"
+        "  if (!el) return {ok: false};"
+        "  el.click(); return {ok: true};"
+        "})())",
+        timeout=5,
+    )
+    if more.get("ok"):
+        await asyncio.sleep(1.0)
+        if await _click_expect_tag(tokens):
+            return
     else:
-        log.info("    没找到下拉触发器")
+        log.info("    页面上没有「更多」入口")
 
-    log.info("  路径 3: fallback —— 用 BOSS 默认的推荐 feed 继续（不主动选 tag）")
+    await _click_expect_tag(tokens, log_available=True)  # 只为打一次可见候选
+    log.warning(
+        "  路径 3: 没找到 %r 对应的求职 tag，只能沿用 BOSS 默认推荐 feed。"
+        " 想要精确筛选，把 BOSS_LABEL 改成上面列出的可见 tag 原名（例如「后端开发(贵阳)」）",
+        label,
+    )
 
 
 # BOSS 详情面板顶部的 UI 文字（按钮 / 区块标题），不是 JD 正文。innerText 会把它们
@@ -570,14 +829,109 @@ async def get_loaded_job_count() -> int:
     return int(result.get("count") or 0)
 
 
+class PageReloadingError(RuntimeError):
+    """BOSS 页面卡在「整页反复重载」状态。
+
+    症状：document 平均每 2~3 秒被重新导航一次（``performance.timeOrigin`` 一直
+    被重置），DOM 里的岗位卡时有时无，脚本每次去点卡片都撞在重载的空档上。
+    以前这种状态会被误判成「已经到推荐列表底部」（连续 5 次拿不到 JD →
+    ``feed_exhausted``），用户看到的是"浏览器一直在刷新，程序却说跑完了"。
+
+    为什么会刷是 BOSS 那边的事，脚本控制不了；能做的是**认出来并停下**。
+    """
+
+
+# 判定「页面卡在重载循环」的滚动窗口与阈值：30 秒内出现 3 个不同文档就算
+# （正常跑一次里，除了启动兜底那次 reload_page，不该有这么密的整页导航）。
+_RELOAD_WINDOW_SECONDS = 30.0
+_RELOAD_LOOP_THRESHOLD = 3
+
+# (采样时刻, performance.timeOrigin) 的滚动窗口。见 _record_document_origin。
+_reload_probe_window: list[tuple[float, float]] = []
+
+
+def _record_document_origin(samples: list, origin: float | None, now: float) -> int:
+    """记录一次 timeOrigin 采样，返回滚动窗口内出现过的**不同文档**数。
+
+    纯函数（写传入的 list），便于单测。只有整页导航才会重置 ``timeOrigin``，
+    虚拟列表重渲染不会——所以窗口里不同 timeOrigin 的个数就等于这几十秒内页面
+    整页刷新了几次。
+    """
+    if origin is not None and (not samples or samples[-1][1] != origin):
+        samples.append((now, origin))
+    samples[:] = [s for s in samples if now - s[0] <= _RELOAD_WINDOW_SECONDS]
+    return len({time_origin for _, time_origin in samples})
+
+
+async def _document_time_origin() -> float | None:
+    """当前文档的 ``performance.timeOrigin``；拿不到返回 None。"""
+    result = await _safe_evaluate(
+        "JSON.stringify((() => ({t: performance.timeOrigin}))())", timeout=5
+    )
+    value = result.get("t")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+async def _raise_if_page_reloading() -> None:
+    """页面卡在整页反复重载时抛 ``PageReloadingError``。
+
+    每次调用采样一次 timeOrigin；同一个文档重复采样不会重复计数。
+    """
+    origin = await _document_time_origin()
+    count = _record_document_origin(
+        _reload_probe_window, origin, asyncio.get_event_loop().time()
+    )
+    if count >= _RELOAD_LOOP_THRESHOLD:
+        raise PageReloadingError(
+            f"BOSS 页面卡在整页反复重载：最近 {_RELOAD_WINDOW_SECONDS:.0f} 秒内整页刷新了 "
+            f"{count} 次。最常见的原因是 BOSS 风控在反复把你送去安全验证"
+            "（浏览记录里能看到 web/passport/zp/security.html 和 _security_check=1_1 来回跳），"
+            "其次是未登录状态下前端路由自己在循环。DOM 里的岗位卡时有时无，"
+            "脚本每次点卡片都撞在重载空档上，继续跑只会把岗位一个个当成"
+            "「拿不到 JD」跳过，最后误报成「已到推荐列表底部」。"
+            "这一步脚本救不了，需要人工过验证/登录：先关掉脚本，用同一个 Chrome profile "
+            "手动开一个不带调试端口的窗口（chrome.exe --user-data-dir=<profile 目录>），"
+            "在里面过掉安全验证并登录成功，再回来重跑。",
+        )
+
+
+async def _wait_for_job_cards(timeout: float = 5.0) -> int:
+    """等岗位卡重新出现在 DOM 里，返回最终数量（一直是 0 就返回 0）。
+
+    虚拟列表在滚动/重渲染的瞬间会把卡片**整片卸载**，``.job-card-box`` 数量会
+    掉到 0。这个窗口里去读列表、去滚动都是在跟渲染赛跑。
+    """
+    deadline = asyncio.get_event_loop().time() + timeout
+    count = await get_loaded_job_count()
+    while count == 0 and asyncio.get_event_loop().time() < deadline:
+        await asyncio.sleep(0.3)
+        count = await get_loaded_job_count()
+    # 列表时有时无、而且是"整页导航"级别地在变 → 页面卡在重载循环，认出来就停。
+    await _raise_if_page_reloading()
+    return count
+
+
 async def scroll_to_load_more_jobs(timeout: float = 8.0) -> bool:
     """滚动岗位 feed 并等待更多岗位卡出现。
 
     BOSS 职位页有两种形态：有些滚动左侧岗位列表容器，有些滚动整个页面到底
     触发 feed 懒加载。页面可能复用固定数量的卡片 DOM，所以左侧列表首卡变化
     也算进展；window 滚动只有岗位卡数量增加才算成功。
+
+    **卡片数为 0 时不滚**：那是虚拟列表正在重渲染的瞬间，此时 ``window.scrollTo``
+    只会把它踹得更狠——页面猛跳到底 → SPA 再卸载重挂一遍 → 又是 0，日志里就会
+    刷出一串「滚动加载更多岗位：0 -> 15」的假进展（用户看到的是"页面一直跳、
+    像在刷新"）。这时候只等它自己挂回来，等到了就返回 True 让主循环重试同一个
+    index（不推进 job_index），期间一次都不滚。
     """
     before = await get_loaded_job_count()
+    if before == 0:
+        restored = await _wait_for_job_cards()
+        if restored:
+            log.info("岗位卡正在重渲染（0 -> %d），等它回来，本轮不滚动", restored)
+            return True
+        log.info("岗位卡持续为 0，本轮不滚动")
+        return False
     scroll_result = await _safe_evaluate(
         """
         JSON.stringify((() => {
@@ -674,6 +1028,8 @@ async def scroll_to_load_more_jobs(timeout: float = 8.0) -> bool:
     while asyncio.get_event_loop().time() < deadline:
         await asyncio.sleep(0.5)
         after = await get_loaded_job_count()
+        # before 一定 > 0（0 的分支上面已经 return 了），所以这里不会把
+        # 「重渲染补回卡片」当成"加载了更多"。
         if after > before:
             log.info(
                 "滚动加载更多岗位：%d -> %d（target=%s）",
@@ -706,13 +1062,41 @@ async def get_text_by_css(selector: str, timeout: float = 5) -> str | None:
     return el.text if el else None
 
 
-async def click_by_xpath(xpath: str, timeout: float = 10) -> bool:
-    """通过 xpath 找到元素并点击。成功返回 True。"""
-    els = await _xpath_safe(xpath, timeout=timeout)
-    if not els:
-        return False
-    await els[0].click()
-    return True
+# 岗位卡上的「立即沟通」按钮。跟 ``get_text_by_css('.op-btn.op-btn-chat')`` 读的是
+# 同一个元素——那边读文字判断能不能投，这边点它。
+_CONTACT_BUTTON_SELECTOR = ".op-btn-chat, .op-btn.op-btn-chat"
+
+
+async def click_contact_button(timeout: float = 10) -> bool:
+    """点岗位卡上的「立即沟通」；成功返回 True。
+
+    **走 JS 而不是 xpath**：``tab.xpath()`` 在当前 Chrome 上第一步就抛
+    ``ProtocolException: 'DOM.enable' wasn't found``，老实现是静默返回 False ——
+    招呼语生成、校验、日志全都正常，只有最后那一下点不出去，日志里连个错都没有。
+    顺带也去掉了对 DOM/Runtime 这些 CDP 域的依赖（能被风控探测的面越小越好）。
+    """
+    deadline = asyncio.get_event_loop().time() + timeout
+    while True:
+        result = await _safe_evaluate(
+            "JSON.stringify((() => {"
+            f"  const els = Array.from(document.querySelectorAll({json.dumps(_CONTACT_BUTTON_SELECTOR)}));"
+            "  const el = els.find((e) => {"
+            "    const r = e.getBoundingClientRect();"
+            "    return r.width > 0 && r.height > 0;"
+            "  });"
+            "  if (!el) return {ok: false};"
+            "  el.click();"
+            "  return {ok: true, text: (el.innerText || '').trim().slice(0, 20)};"
+            "})())",
+            timeout=5,
+        )
+        if result.get("ok"):
+            log.info("已点击「立即沟通」（按钮文案 %r）", result.get("text"))
+            return True
+        if asyncio.get_event_loop().time() >= deadline:
+            log.warning("没找到「立即沟通」按钮（%.0fs 超时）", timeout)
+            return False
+        await asyncio.sleep(0.5)
 
 
 async def dismiss_greeting_dialog(timeout: float = 5) -> bool:

@@ -116,7 +116,7 @@ function Th({
   return (
     <th
       className={[
-        "px-3 py-3 font-mono text-[10px] uppercase tracking-widest text-[var(--ink)]",
+        "px-3 py-3 font-mono text-[13px] uppercase tracking-widest text-[var(--ink)]",
         align === "center" ? "text-center" : "text-left",
       ].join(" ")}
     >
@@ -176,7 +176,7 @@ function Stat({
         {value}
       </div>
       {sub && (
-        <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--muted-fg)] mt-2">
+        <div className="font-mono text-[13px] uppercase tracking-widest text-[var(--muted-fg)] mt-2">
           {sub}
         </div>
       )}
@@ -195,19 +195,19 @@ function LetterRow({ l }: { l: LetterRecord }) {
         className="border-b border-[var(--border-light)] cursor-pointer transition-colors duration-100 hover:bg-[var(--ink)] hover:text-[var(--paper)] group"
         onClick={() => setExpanded(!expanded)}
       >
-        <td className="px-3 py-3 font-mono text-[11px] whitespace-nowrap">
+        <td className="px-3 py-3 font-mono text-[13px] whitespace-nowrap">
           {time}
         </td>
-        <td className="px-3 py-3 font-mono text-[11px] uppercase tracking-widest">
+        <td className="px-3 py-3 font-mono text-[13px] uppercase tracking-widest">
           {l.provider}
         </td>
-        <td className="px-3 py-3 font-mono text-[11px]">{l.model}</td>
+        <td className="px-3 py-3 font-mono text-[13px]">{l.model}</td>
         <td className="px-3 py-3 text-center">
           {l.validation_ok ? (
-            <span className="font-mono text-xs">✓ OK</span>
+            <span className="font-mono text-sm">✓ OK</span>
           ) : (
             <span
-              className="font-mono text-xs border-b-2 border-current"
+              className="font-mono text-sm border-b-2 border-current"
               title={l.validation_reasons.join(", ")}
             >
               ✗ FAIL
@@ -217,15 +217,15 @@ function LetterRow({ l }: { l: LetterRecord }) {
         <td className="px-3 py-3 text-center">
           {l.sent ? (
             // 已发：反色徽章，但 hover 反色后会变白底黑字，要做兼容
-            <span className="font-mono text-[10px] uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] px-2 py-0.5 group-hover:bg-[var(--paper)] group-hover:text-[var(--ink)]">
+            <span className="font-mono text-[13px] uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] px-2 py-0.5 group-hover:bg-[var(--paper)] group-hover:text-[var(--ink)]">
               SENT
             </span>
           ) : l.dry_run ? (
-            <span className="font-mono text-[10px] uppercase tracking-widest border border-current px-2 py-0.5">
+            <span className="font-mono text-[13px] uppercase tracking-widest border border-current px-2 py-0.5">
               DRY
             </span>
           ) : (
-            <span className="font-mono text-[10px] text-[var(--muted-fg)] group-hover:text-[var(--paper)]">
+            <span className="font-mono text-[13px] text-[var(--muted-fg)] group-hover:text-[var(--paper)]">
               —
             </span>
           )}

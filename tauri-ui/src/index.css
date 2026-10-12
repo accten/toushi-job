@@ -67,11 +67,22 @@
   }
 }
 
+@keyframes dsh-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @layer components {
   /* === 按钮 === */
   /* 主按钮：黑底白字 → hover 反色到白底黑字 */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-6 py-3 text-xs font-mono uppercase tracking-widest border-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] transition-colors duration-100;
+    @apply inline-flex items-center justify-center gap-2.5 px-6 py-3 text-sm font-mono uppercase tracking-wider border-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] transition-colors duration-100;
   }
   .btn:hover:not(:disabled) {
     background: var(--paper);
@@ -83,7 +94,7 @@
 
   /* 副按钮：透明底黑边 → hover 填充 */
   .btn-outline {
-    @apply inline-flex items-center justify-center gap-2 px-6 py-3 text-xs font-mono uppercase tracking-widest border-2 border-[var(--ink)] bg-transparent text-[var(--ink)] transition-colors duration-100;
+    @apply inline-flex items-center justify-center gap-2.5 px-6 py-3 text-sm font-mono uppercase tracking-wider border-2 border-[var(--ink)] bg-transparent text-[var(--ink)] transition-colors duration-100;
   }
   .btn-outline:hover:not(:disabled) {
     background: var(--ink);
@@ -95,7 +106,7 @@
 
   /* 幽灵按钮：仅文字 + hover 下划线 */
   .btn-ghost {
-    @apply inline-flex items-center gap-2 px-2 py-1 text-xs font-mono uppercase tracking-widest text-[var(--ink)] border-b-2 border-transparent transition-colors duration-100;
+    @apply inline-flex items-center gap-2 px-2 py-1 text-sm font-mono uppercase tracking-wider text-[var(--ink)] border-b-2 border-transparent transition-colors duration-100;
   }
   .btn-ghost:hover:not(:disabled) {
     border-bottom-color: var(--ink);
@@ -134,7 +145,7 @@
 
   /* 字段标签：mono uppercase 小字 */
   .field-label {
-    @apply block text-[11px] font-mono uppercase tracking-widest text-[var(--muted-fg)] mb-1.5;
+    @apply block text-[13px] font-mono uppercase tracking-wider text-[var(--muted-fg)] mb-1.5;
   }
 
   /* === 容器 === */
@@ -161,14 +172,25 @@
 
   /* 小型 mono 标签（key / metadata） */
   .mono-tag {
-    @apply font-mono text-[11px] uppercase tracking-widest text-[var(--muted-fg)];
+    @apply font-mono text-[13px] uppercase tracking-wider text-[var(--muted-fg)];
+  }
+
+  /* 入场动效：新事件行 / 错误卡片淡入上移一点点。
+     刻意做得很轻（120ms、4px），批量刷新时不会显得晃。 */
+  .fade-in {
+    animation: dsh-fade-in 120ms ease-out both;
+  }
+
+  /* 日志/事件正文：等宽字体行距放宽，长日志更好读 */
+  .log-body {
+    line-height: 1.65;
   }
 
   /* 反色徽章（用于"成功 / 发送"这类强调） */
   .badge-invert {
-    @apply inline-flex items-center px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)];
+    @apply inline-flex items-center px-2 py-0.5 font-mono text-[12px] uppercase tracking-wider bg-[var(--ink)] text-[var(--paper)];
   }
   .badge-outline {
-    @apply inline-flex items-center px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest border border-[var(--ink)] text-[var(--ink)];
+    @apply inline-flex items-center px-2 py-0.5 font-mono text-[12px] uppercase tracking-wider border border-[var(--ink)] text-[var(--ink)];
   }
 }

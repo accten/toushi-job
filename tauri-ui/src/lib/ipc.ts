@@ -25,7 +25,10 @@ export type RunConfig = {
   label: string;
   dryRun: boolean;
   resumePath?: string;
+  platform?: Platform;
 };
+
+export type Platform = "boss" | "zhilian";
 
 // LLM 端点预设（自动填 base_url + model 的快捷项；不是支持范围的限制）。
 export type LlmPreset = {
@@ -93,6 +96,12 @@ export const ipc = {
     pyInvoke<{ status: string }>("start_run", { config, progressChannel, logChannel }),
   stopRun: () => pyInvoke<{ status: string }>("stop_run", {}),
   shutdownBrowser: () => pyInvoke<{ status: string }>("shutdown_browser", {}),
+  // 手动登录：开一个**不带调试端口**的干净 Chrome（用当前平台的 profile），用户自己扫码/输密码，
+  // 登录完关掉那个窗口再点开始 —— 脚本会用同一个 profile 起浏览器，cookie 直接复用。
+  openLoginWindow: (platform: Platform) =>
+    pyInvoke<{ status: string; profile: string; url: string }>("open_login_window", {
+      platform,
+    }),
   getEnvFields: () => pyInvoke<{ fields: EnvField[] }>("get_env_fields", {}),
   writeEnvFields: (updates: Record<string, string>) =>
     pyInvoke<{ status: string }>("write_env_fields", { updates }),

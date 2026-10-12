@@ -27,6 +27,7 @@ from boss_zhipin.vectorization import VectorStore, embed_resume
 load_dotenv()
 log = logging.getLogger(__name__)
 
+
 def _build_client() -> tuple[OpenAI, str]:
     """从 ``LLM_*`` 环境变量构造 OpenAI 客户端 + model 名。
 
@@ -133,8 +134,12 @@ def generate_letter(
     user_prompt = (
         f"工作描述:\n{job_description}\n\n"
         f"简历内容:\n{resume_context}\n\n"
-        "要求:\n根据工作描述，寻找出简历里最合适的技能都有哪些?求职者的优势是什么?"
+        "直接生成BOSS直聘开场消息。只输出消息正文，不要任何分析、解释、前言或引号。"
     )
+
+    # DEBUG: Log what we're sending to the LLM
+    log.info(f"Sending to LLM - system_prompt length: {len(system_prompt)}")
+    log.info(f"Sending to LLM - user_prompt: {repr(user_prompt[:200])}...")
 
     t0 = time.monotonic()
     try:
@@ -168,6 +173,10 @@ def generate_letter(
         letter_len=len(letter),
         ok=True,
     )
+
+    # DEBUG: Log what we got back
+    log.info(f"Received from LLM - letter: {repr(letter[:200])}... (length: {len(letter)})")
+
     return letter
 
 

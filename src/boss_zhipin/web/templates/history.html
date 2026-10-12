@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>发送历史</h2>
+    <p style="color: #666; margin-bottom: 16px;">最近 50 条投递/发送记录</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>时间</th>
+                <th>平台</th>
+                <th>状态</th>
+                <th>岗位预览</th>
+                <th>招呼语预览</th>
+            </tr>
+        </thead>
+        <tbody id="historyBody">
+            <tr>
+                <td colspan="5" style="text-align: center; color: #999;">加载中...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <div class="actions">
+        <button class="btn btn-secondary" onclick="loadHistory()">刷新</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadHistory() {
+        const result = await apiCall('/api/history');
+        const tbody = document.getElementById('historyBody');
+        
+        if (!result.history || result.history.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999;">暂无记录</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = result.history.map(item => {
+            const time = item.ts ? formatTime(item.ts) : '-';
+            const platform = item.provider || '-';
+            const status = item.sent ? '✅ 已发送' : (item.dry_run ? '⏳ DRY_RUN' : '❌ 未发送');
+            const jdPreview = (item.job_description || '-').substring(0, 50) + '...';
+            const letterPreview = (item.letter || '-').substring(0, 50) + '...';
+            
+            return `
+                <tr>
+                    <td>${time}</td>
+                    <td>${platform}</td>
+                    <td>${status}</td>
+                    <td title="${escapeHtml(item.job_description || '')}">${escapeHtml(jdPreview)}</td>
+                    <td title="${escapeHtml(item.letter || '')}">${escapeHtml(letterPreview)}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // 页面加载时获取历史
+    loadHistory();
+</script>
+{% endblock %}

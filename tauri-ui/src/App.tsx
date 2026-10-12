@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { History, Play, SlidersHorizontal } from "lucide-react";
 import RunPage from "./pages/Run";
 import ConfigPage from "./pages/Config";
 import HistoryPage from "./pages/History";
@@ -58,7 +59,7 @@ export default function App() {
           {/* 主标题：oversized serif italic，作为视觉锚点 */}
           <h1 className="font-serif italic text-3xl md:text-4xl leading-none tracking-tight">
             Boss<span className="not-italic font-normal">·</span>Zhipin
-            <span className="block text-[10px] not-italic font-mono uppercase tracking-widest text-[var(--muted-fg)] mt-1">
+            <span className="block text-[13px] not-italic font-mono uppercase tracking-widest text-[var(--muted-fg)] mt-1">
               Auto Greeting · Job Helper
             </span>
           </h1>
@@ -67,6 +68,7 @@ export default function App() {
           <nav className="flex gap-8 self-end pb-1">
             <TabButton current={tab} value="run" onClick={setTab}>
               <span className="inline-flex items-center gap-2">
+                <Play size={15} strokeWidth={2.25} aria-hidden />
                 {t("tab.run")}
                 {running && (
                   // 运行中标记：闪烁的黑色实心方块（不是绿色圆点）
@@ -75,10 +77,16 @@ export default function App() {
               </span>
             </TabButton>
             <TabButton current={tab} value="config" onClick={setTab}>
-              {t("tab.config")}
+              <span className="inline-flex items-center gap-2">
+                <SlidersHorizontal size={15} strokeWidth={2.25} aria-hidden />
+                {t("tab.config")}
+              </span>
             </TabButton>
             <TabButton current={tab} value="history" onClick={setTab}>
-              {t("tab.history")}
+              <span className="inline-flex items-center gap-2">
+                <History size={15} strokeWidth={2.25} aria-hidden />
+                {t("tab.history")}
+              </span>
             </TabButton>
           </nav>
 
@@ -86,16 +94,16 @@ export default function App() {
           <div className="ml-auto self-end pb-1 flex flex-col items-end gap-1.5 max-w-[260px]">
             <button
               onClick={askAi}
-              className="text-[11px] font-mono uppercase tracking-widest border-2 border-[var(--ink)] px-2 py-1 hover:bg-[var(--ink)] hover:text-[var(--paper)] transition-colors duration-100"
+              className="text-[13px] font-mono uppercase tracking-widest border-2 border-[var(--ink)] px-2 py-1 hover:bg-[var(--ink)] hover:text-[var(--paper)] transition-colors duration-100"
             >
               {t("header.askAi")}
             </button>
             {helpMsg ? (
-              <span className="text-[10px] font-mono text-right text-[var(--ink)] leading-relaxed">
+              <span className="text-[13px] font-mono text-right text-[var(--ink)] leading-relaxed">
                 {helpMsg}
               </span>
             ) : (
-              <span className="text-[10px] font-mono uppercase tracking-widest text-right text-[var(--muted-fg)] leading-relaxed">
+              <span className="text-[13px] font-mono uppercase tracking-widest text-right text-[var(--muted-fg)] leading-relaxed">
                 {t("header.warn1")}
                 <br />
                 {t("header.warn2")}
@@ -132,7 +140,7 @@ function TabButton({
     <button
       onClick={() => onClick(value)}
       className={[
-        "pb-2 text-[11px] font-mono uppercase tracking-widest transition-colors duration-100",
+        "pb-2 text-[13px] font-mono uppercase tracking-widest transition-colors duration-100",
         // active：底部 4px 黑线 + 加粗黑字；inactive：弱灰 + hover 时浮现细底线
         active
           ? "text-[var(--ink)] border-b-[3px] border-[var(--ink)] font-semibold"

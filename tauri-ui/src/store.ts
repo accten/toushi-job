@@ -2,7 +2,7 @@
  * 之所以全局：跨 tab 切换不丢运行状态 + 不丢已收的事件。 */
 import { create } from "zustand";
 import { useCallback } from "react";
-import type { ProgressEvent } from "./lib/ipc";
+import type { ProgressEvent, Platform } from "./lib/ipc";
 import { type Lang, detectLang, translate } from "./lib/i18n";
 
 const MAX_EVENTS = 500;
@@ -21,6 +21,7 @@ type RunState = {
   formUsrName: string;
   formLabel: string;
   formDryRun: boolean;
+  formPlatform: Platform;
 
   setRunning: (running: boolean) => void;
   pushEvent: (ev: ProgressEvent) => void;
@@ -28,7 +29,7 @@ type RunState = {
   clear: () => void;
   setLang: (lang: Lang) => void;
 
-  setFormState: (state: Partial<Pick<RunState, "formUsrName" | "formLabel" | "formDryRun">>) => void;
+  setFormState: (state: Partial<Pick<RunState, "formUsrName" | "formLabel" | "formDryRun" | "formPlatform">>) => void;
 };
 
 export const useRunStore = create<RunState>((set) => ({
@@ -42,6 +43,7 @@ export const useRunStore = create<RunState>((set) => ({
   formUsrName: "",
   formLabel: "",
   formDryRun: true,
+  formPlatform: "boss" as Platform, // Default to boss platform
 
   setRunning: (running) => set({ running }),
   pushEvent: (ev) =>

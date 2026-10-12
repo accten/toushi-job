@@ -117,14 +117,15 @@ def extract_keywords_from_text(resume_text: str) -> list[str]:
             log.warning("读取缓存关键词失败: %s", e)
 
     keywords = _llm_extract_keywords(resume_text)
-    
-    # 存入缓存
-    try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(keywords, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        log.warning("保存缓存关键词失败: %s", e)
+
+    # 仅缓存成功提取的关键词（非空列表），避免缓存失败结果导致永久无法重试
+    if keywords:  # 只缓存非空结果
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(keywords, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            log.warning("保存缓存关键词失败: %s", e)
 
     return keywords
 

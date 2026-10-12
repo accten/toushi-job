@@ -37,10 +37,17 @@ KNOWN_KEYS: list[tuple[str, str, bool]] = [
     ("BOSS_LABEL", "求职 tag（空走 BOSS 推荐 feed）", False),
     # RESUME_PATH 不在此处：改由「运行」tab 拖拽上传管理（gui.resume_io），
     # 避免 Config 页一个裸路径输入框成为第二真相源。env 变量本身仍处处生效。
-    ("BOSS_CHROME_PROFILE", "Chrome profile 目录（默认 ./chrome_profile）", False),
+    ("BOSS_CHROME_PROFILE", "BOSS Chrome profile 目录（默认 ./chrome_profile）", False),
+    ("ZHILIAN_CHROME_PROFILE", "智联 Chrome profile 目录（默认 ./chrome_profile_zhilian）", False),
     ("BOSS_MIN_MATCH_SCORE", "LLM 匹配分阈值（默认 50）", False),
     ("BOSS_MIN_KEYWORD_MATCH", "关键词匹配门槛（默认 2，跳过太多就调低到 1）", False),
     ("BOSS_EXCLUDE_KEYWORDS", "岗位黑名单（用逗号分隔，如：外包,驻场）", False),
+    ("BOSS_RECOMMEND_URL", "BOSS 推荐 feed URL（默认 BOSS 推荐页面）", False),
+    (
+        "ZHILIAN_RECOMMEND_URL",
+        "智联推荐 feed URL（默认 https://www.zhaopin.com/recommend 岗位页）",
+        False,
+    ),
     ("LOGLEVEL", "日志级别（默认 INFO）", False),
 ]
 

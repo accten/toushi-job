@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>选择平台</h2>
+    <div class="platform-selector">
+        <div class="platform-option selected" data-platform="boss" onclick="selectPlatform('boss')">
+            <h3>BOSS 直聘</h3>
+            <p>自动抓取 JD，生成个性化招呼语并发送</p>
+        </div>
+        <div class="platform-option" data-platform="zhilian" onclick="selectPlatform('zhilian')">
+            <h3>智联招聘</h3>
+            <p>自动抓取 JD，点击投递按钮（不发送招呼语）</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>运行状态</h2>
+    <div class="status-bar">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">未运行</span>
+    </div>
+    
+    <div class="checkbox-group">
+        <input type="checkbox" id="dryRun" checked>
+        <label for="dryRun">DRY_RUN 模式（只生成不发送）</label>
+    </div>
+    
+    <div class="actions">
+        <button class="btn btn-primary" id="startBtn" onclick="startRunner()">启动</button>
+        <button class="btn btn-danger" id="stopBtn" onclick="stopRunner()" disabled>停止</button>
+    </div>
+</div>
+
+<div class="card">
+    <h2>运行日志</h2>
+    <div class="log-container" id="logContainer">
+        <div class="log-line info">等待启动...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let selectedPlatform = 'boss';
+    let logPolling = null;
+    
+    function selectPlatform(platform) {
+        selectedPlatform = platform;
+        document.querySelectorAll('.platform-option').forEach(el => {
+            el.classList.toggle('selected', el.dataset.platform === platform);
+        });
+    }
+    
+    async function startRunner() {
+        const dryRun = document.getElementById('dryRun').checked;
+        
+        const result = await apiCall('/api/start', 'POST', {
+            platform: selectedPlatform,
+            dry_run: dryRun,
+        });
+        
+        if (result.success) {
+            updateStatus(true);
+            startLogPolling();
+        } else {
+            alert(result.message);
+        }
+    }
+    
+    async function stopRunner() {
+        const result = await apiCall('/api/stop', 'POST');
+        if (result.success) {
+            updateStatus(false);
+            stopLogPolling();
+        }
+    }
+    
+    function updateStatus(running) {
+        const dot = document.getElementById('statusDot');
+        const text = document.getElementById('statusText');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        
+        dot.className = 'status-dot ' + (running ? 'running' : 'stopped');
+        text.textContent = running ? '运行中...' : '已停止';
+        startBtn.disabled = running;
+        stopBtn.disabled = !running;
+    }
+    
+    function startLogPolling() {
+        if (logPolling) return;
+        logPolling = setInterval(fetchLogs, 1000);
+    }
+    
+    function stopLogPolling() {
+        if (logPolling) {
+            clearInterval(logPolling);
+            logPolling = null;
+        }
+    }
+    
+    async function fetchLogs() {
+        const result = await apiCall('/api/logs');
+        const container = document.getElementById('logContainer');
+        
+        if (result.logs && result.logs.length > 0) {
+            container.innerHTML = result.logs.map(log => {
+                const cls = log.includes('ERROR') ? 'error' : 
+                           log.includes('WARNING') ? 'warning' : 'info';
+                return `<div class="log-line ${cls}">${escapeHtml(log)}</div>`;
+            }).join('');
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // 页面加载时检查状态
+    async function checkStatus() {
+        const result = await apiCall('/api/status');
+        updateStatus(result.running);
+        if (result.running) {
+            startLogPolling();
+        }
+    }
+    
+    checkStatus();
+</script>
+{% endblock %}

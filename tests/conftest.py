@@ -48,6 +48,11 @@ _PROJECT_ENV_VARS = (
     # boss_zhipin.cli 用的全局 log 级
     "LOGLEVEL",
     "DRY_RUN",
+    # 扫码登录等待时长（finding_jobs.log_in 读）
+    "BOSS_LOGIN_TIMEOUT",
+    # 岗位之间的随机间隔（write_response._job_gap_range 读）
+    "BOSS_JOB_GAP_MIN",
+    "BOSS_JOB_GAP_MAX",
     # 自动发送节流与单次发送上限
     "BOSS_AUTO_SEND_MAX_SENT",
     "BOSS_AUTO_SEND_DELAY_MIN",

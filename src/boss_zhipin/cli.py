@@ -20,6 +20,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -41,8 +42,24 @@ from boss_zhipin.website_oper.write_response import send_job_descriptions_to_cha
 
 log = logging.getLogger(__name__)
 
-# BOSS 推荐 feed 入口。CLI 和 GUI 都从这里进。
-RECOMMEND_URL = "https://www.zhipin.com/web/geek/job-recommend?ka=header-job-recommend"
+# 平台配置
+PLATFORM_CONFIG = {
+    "boss": {
+        "url": os.getenv("BOSS_RECOMMEND_URL", "https://www.zhipin.com/web/geek/job-recommend?ka=header-job-recommend"),
+        "send_message": True,
+        "description": "BOSS Zhipin (sending cover letters)",
+    },
+    "zhilian": {
+        # 默认必须是**岗位列表页**，不是首页：首页 `a[href]` 里「职位」指向 /recommend，
+        # 实测未登录 /recommend 会 302 到 passport 登录页，所以这里只能给"岗位页"的地址。
+        "url": os.getenv("ZHILIAN_RECOMMEND_URL", "https://www.zhaopin.com/recommend"),
+        "send_message": False,
+        "description": "Zhaopin (only applying)",
+    },
+}
+
+# BOSS 推荐 feed 入口（向后兼容）
+RECOMMEND_URL = PLATFORM_CONFIG["boss"]["url"]
 
 # 简历默认路径。CLI（ensure_resume_path）和 GUI（tauri 的 factory）共用。
 DEFAULT_RESUME_PATH = "resume/my_cover.pdf"
@@ -67,10 +84,10 @@ def ensure_llm_configured() -> None:
     """
     if is_llm_configured():
         return
-    print("❌ 没设置 LLM_API_KEY。")
-    print("   选一家申请 key，填进 .env 的 LLM_API_KEY（.env.example 有样板）：")
+    print("ERROR: LLM_API_KEY is not set.")
+    print("   Please select a provider and obtain an API key, then set LLM_API_KEY in .env (see .env.example):")
     for preset in LLM_PRESETS.values():
-        print(f"     • {preset['label']:<18} {preset['signup_url']}")
+        print(f"     - {preset['label']:<18} {preset['signup_url']}")
         print(f"       LLM_BASE_URL={preset['base_url']}  LLM_MODEL={preset['model']}")
     sys.exit(1)
 
@@ -89,8 +106,8 @@ def ensure_usr_name() -> str:
 def ensure_resume_path() -> str:
     resume_path = os.getenv("RESUME_PATH", "").strip() or DEFAULT_RESUME_PATH
     if not Path(resume_path).is_file():
-        print(f"❌ 找不到简历文件：{resume_path}")
-        print(f"   请把 PDF 简历放到这个路径，或者在 .env 设 RESUME_PATH 指向其他位置。")
+        print(f"错误：找不到简历文件：{resume_path}")
+        print(f"   请将PDF简历放置在此路径，或在.env中设置RESUME_PATH指向其他位置。")
         sys.exit(1)
     return resume_path
 
@@ -127,6 +144,7 @@ async def run_provider(
     label: str,
     dry_run: bool,
     resume_path: str,
+    platform: str = "boss",
 ) -> None:
     """简历预处理 + 主循环，CLI 和 GUI 共用的唯一入口。
 
@@ -134,9 +152,32 @@ async def run_provider(
     不再按 provider 分支——三家都是 OpenAI 兼容端点，走同一条 RAG + chat
     completions 通路。
 
+    ``platform`` 指定求职平台：``"boss"``（BOSS 直聘）或 ``"zhilian"``（智联招聘）。
+
     必须在同一个事件循环里 await（nodriver CDP 跨 run_until_complete 会半死，
     见 ``_cli_main`` 的注释）。
     """
+    # 获取平台配置
+    platform_config = PLATFORM_CONFIG.get(platform)
+    if not platform_config:
+        log.error("Unsupported platform: %s, supported: %s", platform, list(PLATFORM_CONFIG.keys()))
+        return
+    
+    url = platform_config["url"]
+    send_message = platform_config["send_message"]
+    
+    log.info("Starting platform: %s - %s", platform.upper(), platform_config["description"])
+    
+    # 动态导入对应的 finding_jobs 模块
+    if platform == "zhilian":
+        from boss_zhipin.website_oper import zhilian_finding_jobs as finding_jobs_module
+    else:
+        from boss_zhipin.website_oper import finding_jobs as finding_jobs_module
+    
+    # 替换 write_response 里的 finding_jobs 引用
+    import boss_zhipin.website_oper.write_response as wr_module
+    wr_module.finding_jobs = finding_jobs_module
+    
     # 从简历自动提取关键词和全文（用于职位匹配过滤）
     resume_text = extract_resume_text(resume_path)
     resume_keywords = extract_keywords_from_text(resume_text)
@@ -146,7 +187,7 @@ async def run_provider(
     
     # LLM 匹配分阈值，低于该分跳过不投；可用 BOSS_MIN_MATCH_SCORE 覆盖。
     # 走 _int_env：GUI 填了非数字 / 越界也不崩 run，回退到 50 / 收敛到 0-100。
-    min_llm_score = _int_env("BOSS_MIN_MATCH_SCORE", 50, 0, 100)
+    min_llm_score = _int_env("BOSS_MIN_MATCH_SCORE", 70, 0, 100)
     # 关键词粗筛门槛：JD 至少命中几个简历关键词才进 LLM 评分。可用 BOSS_MIN_KEYWORD_MATCH
     # 覆盖（默认 2）。觉得跳过太多（推荐 feed 跟简历词对不上）就调低到 1。
     min_keyword_match = _int_env("BOSS_MIN_KEYWORD_MATCH", 2, 0, 20)
@@ -155,7 +196,7 @@ async def run_provider(
 
     await send_job_descriptions_to_chat(
         usr_name=usr_name,
-        url=RECOMMEND_URL,
+        url=url,
         browser_type="chrome",
         label=label,
         dry_run=dry_run,
@@ -165,6 +206,7 @@ async def run_provider(
         min_llm_score=min_llm_score,
         exclude_keywords=exclude_keywords,
         vectorstore=vectorstore,
+        send_message=send_message,
     )
 
 
@@ -178,6 +220,34 @@ def _cli_main() -> None:
     module docstring；这里的 ``load_dotenv()`` 是给"models 还没 import 就
     需要 env"的将来留的显式入口，幂等。）
     """
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(
+        description="BOSS 直聘 / 智联招聘自动投递脚本",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  uv run main.py                          # 默认使用 BOSS 直聘
+  uv run main.py --platform zhilian       # 使用智联招聘（只投递）
+  uv run main.py --platform boss          # 使用 BOSS 直聘（发送招呼语）
+        """,
+    )
+    parser.add_argument(
+        "--platform",
+        "-p",
+        choices=list(PLATFORM_CONFIG.keys()),
+        default=os.getenv("PLATFORM", "boss").lower(),
+        help="求职平台（默认: boss）。可选: boss, zhilian",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="DRY_RUN 模式：只生成不发送",
+    )
+    
+    # 先解析参数，以便后续使用
+    args, _ = parser.parse_known_args()
+    
     load_dotenv()
     logging.basicConfig(
         level=os.getenv("LOGLEVEL", "INFO").upper(),
@@ -185,24 +255,33 @@ def _cli_main() -> None:
         datefmt="%H:%M:%S",
     )
 
-    dry_run = os.getenv("DRY_RUN", "").lower() in ("1", "true", "yes")
+    # 命令行参数优先，其次环境变量
+    dry_run = args.dry_run or os.getenv("DRY_RUN", "").lower() in ("1", "true", "yes")
     if dry_run:
-        print("⚠️  DRY_RUN=1 — 招呼语只会生成 + 写日志，不会真的发到 BOSS")
+        print("WARNING: DRY_RUN=1 - Only generating cover letters, not sending them.")
 
-    ensure_llm_configured()
+    # 根据平台决定是否需要配置 LLM
+    platform_config = PLATFORM_CONFIG[args.platform]
+    if platform_config["send_message"]:
+        ensure_llm_configured()
+    else:
+        log.info("智联招聘模式：不需要配置 LLM（只投递，不发送招呼语）")
+    
     usr_name = ensure_usr_name()
     resume_path = ensure_resume_path()
     label = get_label()
+    
+    print(f"Job platform: {platform_config['description']}")
     if label:
-        print(f"求职 tag：{label}")
+        print(f"   Job tag: {label}")
     else:
-        print("没设 BOSS_LABEL，用 BOSS 默认推荐 feed")
+        print("   BOSS_LABEL not set, using default recommendation feed")
 
     # run_provider 是 async 的（整段必须跑在同一个事件循环里，否则 nodriver
     # CDP 会在 run_until_complete 之间进入半死态导致 evaluate hang）。
     # 这里用 ``uc.loop().run_until_complete(...)`` 一次性跑完。
     uc.loop().run_until_complete(
-        run_provider(usr_name, label, dry_run, resume_path)
+        run_provider(usr_name, label, dry_run, resume_path, args.platform)
     )
 
 

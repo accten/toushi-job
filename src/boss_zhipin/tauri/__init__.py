@@ -35,7 +35,11 @@ environ.setdefault("_PYTAURI_DIST", "pytauri-wheel")
 
 import asyncio
 import functools
+import json
 import logging
+import os
+import subprocess
+import sys
 from typing import Optional
 
 from anyio.from_thread import start_blocking_portal
@@ -72,6 +76,11 @@ class RunConfig(_CamelModel):
     label: str = ""
     dry_run: bool = False
     resume_path: str = ""  # 空 → 用 RESUME_PATH env / 默认值
+    # ⚠️ `platform` 必须是**正式字段**。以前这里没有它，而下面是
+    # `getattr(config, "platform", None)` —— pydantic 模型对没声明的字段默认是静默
+    # 丢弃（extra=ignore），于是前端明明传了 platform=zhilian，这里永远拿到 None，
+    # 一路 fallback 成 boss：界面上选了智联、跑起来的却是 BOSS 的页面。
+    platform: str = "boss"
 
 
 class StartRunBody(_CamelModel):
@@ -116,11 +125,21 @@ def _build_main_loop_factory(config: RunConfig):
 
         # 简历预处理 + 主循环全部走 cli.run_provider——CLI 和 GUI 共用一份逻辑。
         # 用哪个 LLM 端点由 LLM_* env 决定（Config 页已存进 .env + os.environ）。
+        # 平台：以 config.platform 为准（前端的平台下拉框），没有才回退 PLATFORM env。
+        # 非法的值一律收敛到 boss，并且**打日志**——这样"选了智联却跑 BOSS"这种问题
+        # 一眼就能在日志里看到，而不是靠猜。
+        platform = (config.platform or environ.get("PLATFORM", "boss")).strip().lower()
+        if platform not in ("boss", "zhilian"):
+            log.warning("未知 platform=%r，回退成 boss", platform)
+            platform = "boss"
+        log.info("本次运行平台：%s", platform)
+
         await run_provider(
             usr_name=config.usr_name,
             label=config.label,
             dry_run=config.dry_run,
             resume_path=resume_path,
+            platform=platform,
         )
 
     return factory
@@ -185,6 +204,10 @@ async def start_run(body: StartRunBody, webview_window: WebviewWindow) -> dict[s
 
     # logging → Channel
     log_handler = log_bridge.install(lambda msg: _safe_send(log_channel, msg))
+    # 通道自检：通了的话，日志面板第一行就是这句。
+    # 面板空 + stdout 里出现「推送日志到前端失败」= 后端发不出去；
+    # 面板空 + 这句在 stdout 里却没报错 = 后端发出去了，是前端没渲染。
+    _safe_send(log_channel, "—— 日志通道已连接 ——")
 
     factory = _build_main_loop_factory(body.config)
 
@@ -199,11 +222,36 @@ async def start_run(body: StartRunBody, webview_window: WebviewWindow) -> dict[s
     return {"status": "started"}
 
 
+_send_failures = 0
+
+
 def _safe_send(channel, msg: str) -> None:
+    """把一行日志推给前端 Channel。
+
+    ⚠️ **必须 json.dumps 之后再 send** —— 这就是「日志面板一直空着、进度事件却正常」
+    的原因。pytauri 的 ``Channel.send`` 把 ``str`` 当作 **JSON 文本**发出去
+    （``InvokeResponseBody::Json``，见 ``pytauri/ffi/ipc.py``：str → Json / bytes → Raw），
+    前端拿到后会 ``JSON.parse``。裸日志行 ``23:50:34 [INFO] ...`` 不是合法 JSON，
+    JS 侧一解析就抛异常，消息根本进不了 ``(line) => pushLog(line)`` 回调；
+    而 Python 这边 ``send`` 本身是成功的，所以**一点错都看不到**。
+    进度事件走 ``send_model``（内部就是 ``model_dump_json()``，合法 JSON）所以一直正常。
+
+    **失败必须说出来**：这里以前是裸 ``except Exception: pass``，让上面那个问题更难查。
+    现在第 1~3 次、之后每 50 次把异常打到 stderr（每条都打会把日志刷爆；而且这里不能
+    走 logger —— logger 会再喂回本函数，通道一坏就无限递归）。
+    """
+    global _send_failures
     try:
-        channel.send(msg)
-    except Exception:
-        pass
+        channel.send(json.dumps(msg, ensure_ascii=False))
+    except Exception as e:  # noqa: BLE001
+        _send_failures += 1
+        if _send_failures <= 3 or _send_failures % 50 == 0:
+            print(
+                f"[log-channel] 推送日志到前端失败（第 {_send_failures} 次）："
+                f"{type(e).__name__}: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
 
 
 @commands.command()
@@ -219,6 +267,83 @@ async def shutdown_browser() -> dict[str, str]:
     from boss_zhipin.website_oper import finding_jobs
     await finding_jobs.shutdown()
     return {"status": "ok"}
+
+
+# ---------- 手动登录（开一个干净的 Chrome 窗口，不带任何自动化） ----------
+
+
+class _LoginWindowBody(_CamelModel):
+    platform: str = "boss"
+
+
+def _find_chrome_executable() -> str:
+    """找 chrome.exe：先用 nodriver 自己解析出来的路径（跨平台都靠它），再退回常见位置。"""
+    try:
+        path = Config().browser_executable_path
+        if path and Path(str(path)).is_file():
+            return str(path)
+    except Exception:  # noqa: BLE001
+        pass
+    for candidate in (
+        environ.get("BOSS_CHROME_PATH", ""),
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ):
+        if candidate and Path(candidate).is_file():
+            return candidate
+    return ""
+
+
+@commands.command()
+async def open_login_window(body: _LoginWindowBody) -> dict[str, str]:
+    """开一个**不带调试端口**的 Chrome 让用户手动登录（扫码 / 账号密码）。
+
+    为什么不用 nodriver 开这个窗口：那样它会挂上 CDP 会话，而平台风控会因此反复把页面
+    送去安全验证（BOSS 上实测过 ``security.html`` / ``_security_check`` 死循环，登录页
+    根本没法扫）。登录这一步越干净越好 —— 用户在里面登录完把窗口关掉，再点「开始」，
+    脚本用**同一个 profile** 起自己的浏览器，cookie 直接复用。
+    """
+    platform = (body.platform or "boss").strip().lower()
+    # 两个模块的 profile 常量名不一样（CHROME_PROFILE_DIR vs ZHLIAN_PROFILE_DIR），
+    # 别想着抽公共变量 —— 曾经照 BOSS 的名字写死，切到智联就
+    # AttributeError: ... has no attribute CHROME_PROFILE_DIR，而报错只进了 stderr，
+    # 界面上看着就是"点了没反应"。
+    if platform == "zhilian":
+        from boss_zhipin.website_oper import zhilian_finding_jobs as module
+
+        url = "https://www.zhaopin.com/"
+        profile = module.ZHLIAN_PROFILE_DIR
+    else:
+        from boss_zhipin.website_oper import finding_jobs as module
+
+        url = "https://www.zhipin.com/"
+        profile = module.CHROME_PROFILE_DIR
+
+    # 同一个 profile 要是被脚本自己的 Chrome 占着，新窗口要么起不来、要么串到那个实例上
+    await module.shutdown()
+    module._reap_profile_chrome(profile)  # 同一包内的私有 helper：清孤儿 Chrome + 残留锁
+    os.makedirs(profile, exist_ok=True)
+
+    chrome = _find_chrome_executable()
+    if not chrome:
+        raise ValueError("找不到 Chrome 可执行文件，请确认已安装 Chrome")
+
+    subprocess.Popen(
+        [
+            chrome,
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-session-crashed-bubble",
+            url,
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+    log.info("已打开登录窗口：platform=%s profile=%s", platform, profile)
+    return {"status": "opened", "profile": profile, "url": url}
 
 
 # ---------- Config 面板：AI 端点（base_url + key + model） ----------

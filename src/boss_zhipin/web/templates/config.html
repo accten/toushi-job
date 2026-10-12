@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>LLM 配置（仅 BOSS 直聘需要）</h2>
+    <p style="color: #666; margin-bottom: 16px;">用于生成个性化招呼语。智联招聘模式不需要配置。</p>
+    
+    <div class="form-group">
+        <label for="apiKey">API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-...">
+        <div class="hint">你的 LLM API Key</div>
+    </div>
+    
+    <div class="form-group">
+        <label for="model">模型</label>
+        <input type="text" id="model" placeholder="deepseek-chat">
+        <div class="hint">例如：deepseek-chat, gpt-4o, claude-sonnet-4-6</div>
+    </div>
+    
+    <div class="form-group">
+        <label for="baseUrl">Base URL（可选）</label>
+        <input type="text" id="baseUrl" placeholder="https://api.deepseek.com">
+        <div class="hint">留空使用默认端点</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>BOSS 直聘配置</h2>
+    
+    <div class="form-group">
+        <label for="boss_usrName">你的名字</label>
+        <input type="text" id="boss_usrName" placeholder="张三">
+        <div class="hint">会出现在招呼语结尾</div>
+    </div>
+    
+    <div class="form-group">
+        <label for="boss_label">求职标签（可选）</label>
+        <input type="text" id="boss_label" placeholder="后端开发">
+        <div class="hint">留空使用 BOSS 默认推荐 feed</div>
+    </div>
+    
+    <div class="form-group">
+        <label for="boss_resumePath">简历路径</label>
+        <div style="display: flex; gap: 8px;">
+            <input type="text" id="boss_resumePath" placeholder="resume/my_cover.pdf" style="flex: 1;" readonly>
+            <button class="btn btn-secondary" type="button" onclick="selectResume('boss')">选择文件</button>
+        </div>
+        <div class="hint">PDF 格式简历的路径</div>
+    </div>
+    
+    <div class="checkbox-group">
+        <input type="checkbox" id="boss_dryRun">
+        <label for="boss_dryRun">默认启用 DRY_RUN 模式</label>
+    </div>
+</div>
+
+<div class="card">
+    <h2>智联招聘配置</h2>
+    <p style="color: #666; margin-bottom: 16px;">只需配置用户名和简历，不需要 LLM 配置</p>
+    
+    <div class="form-group">
+        <label for="zhilian_usrName">你的名字</label>
+        <input type="text" id="zhilian_usrName" placeholder="张三">
+        <div class="hint">用于投递记录</div>
+    </div>
+    
+    <div class="form-group">
+        <label for="zhilian_label">求职标签（可选）</label>
+        <input type="text" id="zhilian_label" placeholder="后端开发">
+        <div class="hint">留空使用默认推荐 feed</div>
+    </div>
+    
+    <div class="form-group">
+        <label for="zhilian_resumePath">简历路径</label>
+        <div style="display: flex; gap: 8px;">
+            <input type="text" id="zhilian_resumePath" placeholder="resume/my_cover.pdf" style="flex: 1;" readonly>
+            <button class="btn btn-secondary" type="button" onclick="selectResume('zhilian')">选择文件</button>
+        </div>
+        <div class="hint">PDF 格式简历的路径</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="actions">
+        <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
+        <button class="btn btn-secondary" onclick="loadConfig()">重新加载</button>
+    </div>
+    <div id="saveMessage" style="margin-top: 12px; color: #4fc08d; display: none;">配置已保存</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadConfig() {
+        const result = await apiCall('/api/config');
+        
+        // LLM 配置
+        document.getElementById('apiKey').value = result.llm_api_key ? '••••••••' : '';
+        document.getElementById('model').value = result.llm_model || '';
+        document.getElementById('baseUrl').value = result.llm_base_url || '';
+        
+        // BOSS 直聘配置
+        document.getElementById('boss_usrName').value = result.boss_usr_name || '';
+        document.getElementById('boss_label').value = result.boss_label || '';
+        document.getElementById('boss_resumePath').value = result.boss_resume_path || result.resume_path || 'resume/my_cover.pdf';
+        document.getElementById('boss_dryRun').checked = result.dry_run;
+        
+        // 智联招聘配置
+        document.getElementById('zhilian_usrName').value = result.zhilian_usr_name || '';
+        document.getElementById('zhilian_label').value = result.zhilian_label || '';
+        document.getElementById('zhilian_resumePath').value = result.zhilian_resume_path || result.resume_path || 'resume/my_cover.pdf';
+    }
+    
+    async function selectResume(platform) {
+        // 创建一个隐藏的 file input
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf';
+        input.style.display = 'none';
+        
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const pathInput = document.getElementById(`${platform}_resumePath`);
+            pathInput.value = '上传中...';
+            
+            // 上传文件到服务器
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/api/upload_resume', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    pathInput.value = result.filename;
+                    pathInput.dataset.fullPath = result.path;
+                } else {
+                    pathInput.value = '';
+                    alert('上传失败: ' + result.message);
+                }
+            } catch (err) {
+                pathInput.value = '';
+                alert('上传出错: ' + err.message);
+            }
+        };
+        
+        document.body.appendChild(input);
+        input.click();
+        document.body.removeChild(input);
+    }
+    
+    async function saveConfig() {
+        const apiKey = document.getElementById('apiKey').value;
+        
+        // 获取完整路径
+        const bossResumeInput = document.getElementById('boss_resumePath');
+        const zhilianResumeInput = document.getElementById('zhilian_resumePath');
+        
+        const data = {
+            // LLM 配置
+            llm_api_key: apiKey === '••••••••' ? '' : apiKey,
+            llm_model: document.getElementById('model').value,
+            llm_base_url: document.getElementById('baseUrl').value,
+            
+            // BOSS 直聘配置
+            boss_usr_name: document.getElementById('boss_usrName').value,
+            boss_label: document.getElementById('boss_label').value,
+            boss_resume_path: bossResumeInput.dataset.fullPath || bossResumeInput.value,
+            boss_dry_run: document.getElementById('boss_dryRun').checked,
+            
+            // 智联招聘配置
+            zhilian_usr_name: document.getElementById('zhilian_usrName').value,
+            zhilian_label: document.getElementById('zhilian_label').value,
+            zhilian_resume_path: zhilianResumeInput.dataset.fullPath || zhilianResumeInput.value,
+            
+            // 兼容旧字段
+            resume_path: bossResumeInput.dataset.fullPath || bossResumeInput.value,
+            dry_run: document.getElementById('boss_dryRun').checked,
+        };
+        
+        const result = await apiCall('/api/config', 'POST', data);
+        
+        if (result.success) {
+            const msg = document.getElementById('saveMessage');
+            msg.style.display = 'block';
+            setTimeout(() => { msg.style.display = 'none'; }, 2000);
+        }
+    }
+    
+    // 页面加载时读取配置
+    loadConfig();
+</script>
+{% endblock %}
