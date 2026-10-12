@@ -1,8 +1,9 @@
-# BOSS 直聘 / 智联招聘 · 自动打招呼 & 自动投递助手
+# 投石 · Toushi
 
-> 读岗位 JD → 用 LLM 判断「这个岗位跟我简历到底配不配」→ 配得上才打招呼 / 投递，配不上直接跳过。
+> **投石问路** —— 读岗位 JD，用 LLM 判断「这个岗位跟我简历到底配不配」，配得上才打招呼 / 投递。
 > 招呼语由 LLM 结合你的简历（RAG 召回）生成，**发送前必过校验**，防止把模型抽风的输出发给真招聘者。
 
+支持 **BOSS 直聘**（打招呼 + 发招呼语）和 **智联招聘**（只投递简历、不发消息）。
 桌面端（PyTauri）和命令行都能跑，LLM 侧走**任意 OpenAI 兼容端点** —— DeepSeek / OpenAI / Claude / 通义千问·百炼 / 智谱 GLM / 豆包 / Kimi / 硅基流动 / 本地 Ollama / 任意中转，配好 `LLM_BASE_URL` + `LLM_API_KEY` + `LLM_MODEL` 三个变量就起跑。
 
 ---
@@ -68,7 +69,7 @@
 | Python | ≥ 3.11 | |
 | [uv](https://docs.astral.sh/uv/) | 最新 | 依赖与虚拟环境管理 |
 | Google Chrome | 较新版本 | 自动化跑在独立 profile 上 |
-| Node.js | ≥ 18 | **只有要自己构建前端时**才需要（仓库里已带构建产物） |
+| Node.js | ≥ 18 | **桌面 App 必需**：前端产物不入库，需本地构建一次（只用命令行的话可以不装） |
 
 ### 1. 安装
 
@@ -78,6 +79,9 @@ cd <仓库目录>
 uv sync                     # 安装全部依赖（含桌面 App 的 tauri 组）
 # 只要命令行、不要桌面 App：
 # uv sync --no-group tauri
+
+# 桌面 App 还要构建一次前端（产物落在 src/boss_zhipin/tauri/frontend/）
+cd tauri-ui && npm install && npm run build && cd ..
 ```
 
 ### 2. 配置
@@ -223,6 +227,9 @@ cd tauri-ui && npm install && npm run build
 
 **Q：桌面 App 打开是白屏？**
 WebView2 需要往 `%LOCALAPPDATA%<app-id>\EBWebView` 写用户数据目录。如果被安全软件/沙箱拦住，窗口就只有标题栏、内容全白。用普通权限从仓库目录启动即可。
+
+**Q：桌面 App 启动报错 / 窗口里什么都没有，但命令行能跑？**
+八成是漏了前端构建。前端产物被 `.gitignore` 排除、不在仓库里，克隆后必须自己跑一次 `cd tauri-ui && npm install && npm run build`。
 
 **Q：页面一直在整页刷新，日志刷屏？**
 这是平台的风控安全验证（BOSS 上表现为 `security.html` / `_security_check` 来回跳）。脚本识别到会明确报错停下。**处理办法**：按上面的「首次登录」用干净窗口登录并人工过掉验证；别在那种状态下反复重跑，每次重跑都是给风控"续杯"。

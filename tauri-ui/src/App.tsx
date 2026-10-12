@@ -58,9 +58,11 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-8 pt-8 pb-2 flex items-baseline gap-10">
           {/* 主标题：oversized serif italic，作为视觉锚点 */}
           <h1 className="font-serif italic text-3xl md:text-4xl leading-none tracking-tight">
-            Boss<span className="not-italic font-normal">·</span>Zhipin
+            <span className="not-italic">投石</span>
+            <span className="not-italic font-normal mx-1.5">·</span>
+            Toushi
             <span className="block text-[13px] not-italic font-mono uppercase tracking-widest text-[var(--muted-fg)] mt-1">
-              Auto Greeting · Job Helper
+              投石问路 · 只投对味的岗位
             </span>
           </h1>
 

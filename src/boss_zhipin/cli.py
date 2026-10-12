@@ -6,7 +6,7 @@
    不设就 prompt 用户输入或用默认值。
 3. 进入主循环——统一走一个 OpenAI 兼容端点，不再分 provider 分支。
 
-跑法：``uv run main.py`` / ``uv run python -m boss_zhipin`` / ``boss-zhipin``（pyproject script）
+跑法：``uv run main.py`` / ``uv run python -m boss_zhipin`` / ``toushi``（pyproject script）
 三种等价。
 
 设计：用户输入提示用 ``print``，业务流程用 ``logging``。logging 在

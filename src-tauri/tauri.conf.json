@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "BOSS Zhipin Helper",
+  "productName": "Toushi",
   "version": "0.6.0",
-  "identifier": "com.longsizhuo.boss-zhipin",
+  "identifier": "com.longsizhuo.toushi",
   "build": {
     "beforeDevCommand": "pnpm --dir ../tauri-ui dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "BOSS Zhipin Helper",
+        "title": "投石 · Toushi",
         "label": "main",
         "width": 1000,
         "height": 720,

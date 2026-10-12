@@ -1,4 +1,4 @@
-﻿# Phase D：Windows 上打 standalone .exe / NSIS / MSI（macOS .app 的等价物）。
+# Phase D：Windows 上打 standalone .exe / NSIS / MSI（macOS .app 的等价物）。
 #
 # 跟 build_standalone.sh 平行——固化"嵌入式 Python 组装 + 业务包安装 +
 # Rust 链接参数 + tauri bundle"整条流程。**不要手工拆步骤跑**：漏掉
@@ -103,7 +103,7 @@ Write-Host "==> 安装 boss_zhipin + 依赖到 pyembed（首次会拉 torch，�
 $env:PYTAURI_STANDALONE = '1'
 uv pip install --exact --compile-bytecode --break-system-packages `
     "--python=$EmbedPy" `
-    --reinstall-package=boss-zhipin-job-search `
+    --reinstall-package=toushi `
     "$RepoRoot[standalone]"
 if ($LASTEXITCODE -ne 0) { throw "uv pip install 失败（exit $LASTEXITCODE）" }
 

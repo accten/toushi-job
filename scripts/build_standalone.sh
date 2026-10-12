@@ -92,7 +92,7 @@ PYTAURI_STANDALONE=1 uv pip install \
     --compile-bytecode \
     --break-system-packages \
     --python="$EMBED_PY" \
-    --reinstall-package=boss-zhipin-job-search \
+    --reinstall-package=toushi \
     "$REPO_ROOT[standalone]"
 
 # ---------- 3.5 删掉 pyembed 里的 BUILD 标记文件 ----------
