@@ -4,6 +4,13 @@
 # 指到这里；不要提交。
 /.pytest-tmp/
 /.pytest_cache/
+# AI 协作时的临时脚本 / 截图（根目录下划线开头）。这些是干活用的，
+# 不属于仓库内容，加进来免得每次 git add -A 都误提交一次。
+/_*.ps1
+/_*.sh
+/_*.py
+/_*.png
+/_*.txt
 /back/
 /D-id_Streaming_Chatgpt/
 /jarvis/

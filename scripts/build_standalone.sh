@@ -165,13 +165,16 @@ done
 # 改成挂载 dmg，对**用户真正拿到的那份**做自检 —— 比检查中间产物更有意义。
 DMG=$(find "$REPO_ROOT/src-tauri/target/bundle-release/bundle/dmg" -name "*.dmg" 2>/dev/null | head -1)
 [[ -n "$DMG" ]] || { echo "❌ 没找到 .dmg 产物"; exit 1; }
-echo "==> dmg: $DMG（$(du -sm "$DMG" | cut -f1) MB）"
+# 注意花括号：macOS 的 /bin/bash 是 3.2，$DMG 后面紧跟全角字符时它会把那个
+# 字符算进变量名，set -u 下直接报 "DMG（: unbound variable"。变量后面接非 ASCII
+# 一律用 ${VAR}。
+echo "==> dmg: ${DMG}（$(du -sm "${DMG}" | cut -f1) MB）"
 
 MOUNT_POINT=$(mktemp -d)
 hdiutil attach "$DMG" -mountpoint "$MOUNT_POINT" -nobrowse -quiet
 APP=$(find "$MOUNT_POINT" -maxdepth 2 -name "*.app" | head -1)
 [[ -n "$APP" ]] || {
-    echo "❌ dmg 里没找到 .app（挂载点 $MOUNT_POINT）"
+    echo "❌ dmg 里没找到 .app（挂载点 ${MOUNT_POINT}）"
     ls -la "$MOUNT_POINT" || true
     hdiutil detach "$MOUNT_POINT" -quiet || true
     exit 1
