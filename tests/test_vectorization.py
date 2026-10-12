@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from boss_zhipin.vectorization import split_text, text_hash
+from toushi.vectorization import split_text, text_hash
 
 
 # ---------- split_text ----------

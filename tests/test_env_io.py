@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-from boss_zhipin.gui import env_io
+from toushi.gui import env_io
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ class TestWriteEnvSyncsEnviron:
         assert os.getenv("LLM_API_KEY") == "sk-test"
 
     def test_is_configured_sees_new_key_without_restart(self, in_tmp_cwd, monkeypatch):
-        from boss_zhipin.providers import is_llm_configured
+        from toushi.providers import is_llm_configured
 
         monkeypatch.delenv("LLM_API_KEY", raising=False)
         assert is_llm_configured() is False

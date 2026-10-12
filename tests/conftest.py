@@ -1,7 +1,7 @@
 """pytest 公共配置。
 
 - Phase D-pre 后：项目以 src/ 布局变成可安装 package，``uv sync`` 会把
-  ``boss_zhipin`` editable install 进 .venv，``from boss_zhipin import X``
+  ``toushi`` editable install 进 .venv，``from toushi import X``
   不需要 sys.path 注入也能 import。这里不再 manipulate sys.path。
 - **主动清空所有项目相关 env 变量**，让测试不被本机 .env / shell export
   污染。包括 provider key、用户输入兜底、以及 retry 装饰器在 import time
@@ -45,7 +45,7 @@ _PROJECT_ENV_VARS = (
     # letter 校验边界
     "LETTER_MIN_LEN",
     "LETTER_MAX_LEN",
-    # boss_zhipin.cli 用的全局 log 级
+    # toushi.cli 用的全局 log 级
     "LOGLEVEL",
     "DRY_RUN",
     # 扫码登录等待时长（finding_jobs.log_in 读）

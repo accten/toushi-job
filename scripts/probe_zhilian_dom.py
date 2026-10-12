@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from boss_zhipin.website_oper import zhilian_finding_jobs as z  # noqa: E402
+from toushi.website_oper import zhilian_finding_jobs as z  # noqa: E402
 
 CANDIDATES = [
     # 岗位卡（列表项）

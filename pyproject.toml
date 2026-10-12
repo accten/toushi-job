@@ -33,8 +33,8 @@ standalone = [
 ]
 
 [project.scripts]
-# uv run toushi 等价于 uv run python -m boss_zhipin / uv run main.py
-toushi = "boss_zhipin.cli:_cli_main"
+# uv run toushi 等价于 uv run python -m toushi / uv run main.py
+toushi = "toushi.cli:_cli_main"
 
 [build-system]
 # Phase D-pre 改造：项目以 src/ 布局变成可安装 package，给 Phase D 用
@@ -49,7 +49,7 @@ where = ["src"]
 # wheel 里必须带上 Tauri 的非 Python 文件，否则 standalone bundle（Phase D）
 # 装出来 context_factory 找不到 Tauri.toml / frontend，桌面 App 直接起不来。
 # editable install（uv sync）指回源码树所以感知不到——别因为本地能跑就删这段。
-"boss_zhipin.tauri" = [
+"toushi.tauri" = [
     "Tauri.toml",
     "capabilities/*.toml",
     "frontend/**",

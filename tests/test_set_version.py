@@ -20,7 +20,7 @@ CONFIG_FILES = [
     ("pyproject.toml", False),
     ("src-tauri/Cargo.toml", False),
     ("src-tauri/tauri.conf.json", True),
-    ("src/boss_zhipin/tauri/Tauri.toml", False),
+    ("src/toushi/tauri/Tauri.toml", False),
 ]
 
 
@@ -68,7 +68,7 @@ def test_all_files_get_correct_version(fake_repo, arg, full, msi_core):
     assert "productName" in conf  # 结构没被搞坏
 
     # 三个 TOML 文件拿完整版本号
-    for rel in ("pyproject.toml", "src-tauri/Cargo.toml", "src/boss_zhipin/tauri/Tauri.toml"):
+    for rel in ("pyproject.toml", "src-tauri/Cargo.toml", "src/toushi/tauri/Tauri.toml"):
         text = (fake_repo / rel).read_text(encoding="utf-8")
         assert f'version = "{full}"' in text, f"{rel} 没注入对版本号"
 

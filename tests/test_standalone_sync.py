@@ -1,4 +1,4 @@
-"""standalone（src-tauri/）和 wheel（src/boss_zhipin/tauri/）两套配置的同步守卫。
+"""standalone（src-tauri/）和 wheel（src/toushi/tauri/）两套配置的同步守卫。
 
 这些文件分属不同工具链（Rust / Python），没法共享单一来源，靠测试兜底：
 - capabilities：``default.toml``（wheel dev）和 ``default.json``（standalone）
@@ -13,7 +13,7 @@ import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
-WHEEL_TAURI_DIR = REPO_ROOT / "src" / "boss_zhipin" / "tauri"
+WHEEL_TAURI_DIR = REPO_ROOT / "src" / "toushi" / "tauri"
 SRC_TAURI_DIR = REPO_ROOT / "src-tauri"
 
 
@@ -46,7 +46,7 @@ def test_versions_in_sync():
 def test_identifiers_in_sync():
     tauri_conf = json.loads((SRC_TAURI_DIR / "tauri.conf.json").read_text(encoding="utf-8"))
     wheel_tauri = tomllib.loads((WHEEL_TAURI_DIR / "Tauri.toml").read_text(encoding="utf-8"))
-    from boss_zhipin.paths import APP_IDENTIFIER
+    from toushi.paths import APP_IDENTIFIER
 
     assert tauri_conf["identifier"] == APP_IDENTIFIER
     assert wheel_tauri["identifier"] == APP_IDENTIFIER

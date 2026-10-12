@@ -276,7 +276,7 @@ rm -rf logs/             # 删历史 audit
 
 v0.3.1 的 .app 在 macOS 26+ 上会启动即崩，弹这个系统崩溃对话框。原因：ad-hoc
 签名默认带 hardened runtime，library validation 拒载 bundle 内 linker-signed 的
-`libpython3.13.dylib`。崩溃报告（`~/Library/Logs/DiagnosticReports/boss-zhipin-*.ips`）
+`libpython3.13.dylib`。崩溃报告（`~/Library/Logs/DiagnosticReports/toushi-*.ips`）
 里能看到：
 
 ```

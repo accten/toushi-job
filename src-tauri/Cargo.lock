@@ -143,7 +143,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "boss-zhipin"
+name = "toushi"
 version = "0.6.0"
 dependencies = [
  "pyo3",

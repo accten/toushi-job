@@ -12,9 +12,9 @@ import logging
 
 import pytest
 
-from boss_zhipin.gui import events as gui_events
-from boss_zhipin.gui import log_bridge
-from boss_zhipin.gui import runner
+from toushi.gui import events as gui_events
+from toushi.gui import log_bridge
+from toushi.gui import runner
 
 
 @pytest.fixture(autouse=True)

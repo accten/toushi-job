@@ -5,7 +5,7 @@
 """
 import pytest
 
-from boss_zhipin.gui import i18n
+from toushi.gui import i18n
 
 
 @pytest.fixture(autouse=True)

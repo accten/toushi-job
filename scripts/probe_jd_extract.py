@@ -22,8 +22,8 @@ import json
 import nodriver as uc
 from nodriver import Config
 
-from boss_zhipin.cli import RECOMMEND_URL
-from boss_zhipin.website_oper.finding_jobs import CHROME_PROFILE_DIR
+from toushi.cli import RECOMMEND_URL
+from toushi.website_oper.finding_jobs import CHROME_PROFILE_DIR
 
 # 同一个 .job-detail-body 节点上对比 4 种抽取；并列候选选择器；dump 结构。
 DUMP_JS = r"""

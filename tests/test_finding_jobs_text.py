@@ -8,8 +8,8 @@ import asyncio
 import os
 import types
 
-from boss_zhipin.website_oper import finding_jobs
-from boss_zhipin.website_oper.finding_jobs import (
+from toushi.website_oper import finding_jobs
+from toushi.website_oper.finding_jobs import (
     LoginRequiredError,
     PageReloadingError,
     _apply_sandbox_setting,

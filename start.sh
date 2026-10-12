@@ -93,7 +93,7 @@ if [[ $mode_choice == "1" ]]; then
     log_info "正在启动 $platform_name 图形界面..."
     log_info "请在配置页填写 API Key 等信息后保存"
     log_info "然后切换到运行页，填写用户名并点击开始"
-    uv run python -m boss_zhipin.tauri
+    uv run python -m toushi.tauri
 else
     # 启动 CLI
     log_info "正在启动 $platform_name 命令行界面..."

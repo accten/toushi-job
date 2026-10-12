@@ -120,10 +120,10 @@ OpenAI 自己有 **Assistants API**（管理对话 thread + 绑定 vector store�
 加新 provider 时检查清单：
 
 - [ ] 它有 OpenAI 兼容端点吗？没有的话考虑是否值得开 SDK 例外
-- [ ] [`src/boss_zhipin/models/llm.py`](../../src/boss_zhipin/models/llm.py) `PROVIDERS` 加一条
-- [ ] [`src/boss_zhipin/cli.py`](../../src/boss_zhipin/cli.py) `PROVIDER_ENV_KEYS` + `PROVIDER_SIGNUP` 加一条
+- [ ] [`src/toushi/models/llm.py`](../../src/toushi/models/llm.py) `PROVIDERS` 加一条
+- [ ] [`src/toushi/cli.py`](../../src/toushi/cli.py) `PROVIDER_ENV_KEYS` + `PROVIDER_SIGNUP` 加一条
 - [ ] [`.env.example`](../../.env.example) 加注释 + 申请链接
-- [ ] [`src/boss_zhipin/audit/telemetry.py`](../../src/boss_zhipin/audit/telemetry.py) `PRICING_CNY_PER_M_TOKENS` 加一行
+- [ ] [`src/toushi/audit/telemetry.py`](../../src/toushi/audit/telemetry.py) `PRICING_CNY_PER_M_TOKENS` 加一行
 - [ ] [`tests/test_main_helpers.py`](../../tests/test_main_helpers.py)
   里加一个 detect_providers 覆盖
 - [ ] 跑一次 `DRY_RUN=1` 看实际效果

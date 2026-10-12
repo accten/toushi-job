@@ -67,14 +67,14 @@ echo 'LLM_MODEL=gpt-4o-mini' >> .env
 会把一段**自带上下文**的求助文本复制到剪贴板：app 是干嘛的、版本、系统、当前配置
 体检（有没有配 key / model / 简历，**不含 key 明文**）、文档链接、最近运行日志。直接
 粘到 ChatGPT / Claude 等任意 AI，它就能对上号、给你具体步骤——不需要你先 clone 仓库
-或翻文档。生成逻辑在 `src/boss_zhipin/gui/diagnostics.py`。
+或翻文档。生成逻辑在 `src/toushi/gui/diagnostics.py`。
 
 ### 桌面 App 怎么切中英文？
 
 「配置」页顶部有「界面语言 · Language」下拉，选中文 / English 即时生效，无需重启。
 偏好存在 `.env` 的 `BOSS_LANG`（`zh` / `en`），首次启动按系统语言自动选默认。整套
 UI 文案 + 后端回传给前端的报错（缺简历 / 没配 key 之类）都跟着这个语言走。文案目录
-在前端 `tauri-ui/src/lib/i18n.ts`、后端 `src/boss_zhipin/gui/i18n.py`，加语言 / 改
+在前端 `tauri-ui/src/lib/i18n.ts`、后端 `src/toushi/gui/i18n.py`，加语言 / 改
 文案改这两处。
 
 ## 代码 / 开发
@@ -86,8 +86,8 @@ UI 文案 + 后端回传给前端的报错（缺简历 / 没配 key 之类）都
 
 如果你想让它出现在 **GUI 的「常用快捷」下拉**里（只是便利，不是支持范围的限制）：
 
-1. 编辑 [`src/boss_zhipin/providers.py`](../../src/boss_zhipin/providers.py)，在 `LLM_PRESETS` 字典加一行（key、label、base_url、model、signup_url）。
-2. 改 [`src/boss_zhipin/audit/telemetry.py`](../../src/boss_zhipin/audit/telemetry.py) 的 `PRICING_CNY_PER_M_TOKENS` 加上对应模型的价格表（想要成本统计准的话）。
+1. 编辑 [`src/toushi/providers.py`](../../src/toushi/providers.py)，在 `LLM_PRESETS` 字典加一行（key、label、base_url、model、signup_url）。
+2. 改 [`src/toushi/audit/telemetry.py`](../../src/toushi/audit/telemetry.py) 的 `PRICING_CNY_PER_M_TOKENS` 加上对应模型的价格表（想要成本统计准的话）。
 
 ### 测试时怎么 mock LLM 调用？
 不要 mock。`generate_letter` 已经隔离得很薄了，单测只测 `_build_client` 这种

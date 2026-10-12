@@ -12,8 +12,8 @@ import types
 
 import pytest
 
-from boss_zhipin.models import job_matcher
-from boss_zhipin.models.job_matcher import (
+from toushi.models import job_matcher
+from toushi.models.job_matcher import (
     _find_keywords,
     extract_keywords_from_text,
     keyword_match,

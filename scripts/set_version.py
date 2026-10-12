@@ -49,7 +49,7 @@ TARGETS: list[tuple[str, str, bool]] = [
     ("pyproject.toml", r'(?m)^(version = ")[^"]*(")', True),
     ("src-tauri/Cargo.toml", r'(?m)^(version = ")[^"]*(")', True),
     ("src-tauri/tauri.conf.json", r'("version":\s*")[^"]*(")', True),
-    ("src/boss_zhipin/tauri/Tauri.toml", r'(?m)^(version = ")[^"]*(")', True),
+    ("src/toushi/tauri/Tauri.toml", r'(?m)^(version = ")[^"]*(")', True),
 ]
 
 
@@ -89,7 +89,7 @@ def patch_line(path: Path, pattern: str, version: str, required: bool) -> bool:
 
 
 def patch_cargo_lock(version: str) -> bool:
-    """同步 Cargo.lock 里 boss-zhipin 这一项的版本，免得 cargo build 还要改 lockfile。
+    """同步 Cargo.lock 里 toushi 这一项的版本，免得 cargo build 还要改 lockfile。
 
     best-effort：lockfile 不在 / 没这一项就跳过（cargo 会在非 --locked 下自愈）。
     """
@@ -98,7 +98,7 @@ def patch_cargo_lock(version: str) -> bool:
         return False
     text = lock.read_text(encoding="utf-8")
     new_text, n = re.subn(
-        r'(name = "boss-zhipin"\nversion = )"[^"]*"',
+        r'(name = "toushi"\nversion = )"[^"]*"',
         lambda m: f'{m.group(1)}"{version}"',
         text,
         count=1,
@@ -134,7 +134,7 @@ def main(argv: list[str]) -> int:
             note = "（MSI 安全核）" if v != version else ""
             print(f"==> {rel} → {v}{note}")
     if patch_cargo_lock(version):
-        print(f"==> src-tauri/Cargo.lock (boss-zhipin) → {version}")
+        print(f"==> src-tauri/Cargo.lock (toushi) → {version}")
 
     print(f"✅ 版本号已统一为 {version}")
     return 0

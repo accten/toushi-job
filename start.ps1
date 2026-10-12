@@ -31,7 +31,7 @@ Write-Host "[INFO] Starting BossZhiPin_Job_Search Web Frontend..." -ForegroundCo
 Write-Host "[INFO] Please access http://localhost:5000 in your browser to use the interface" -ForegroundColor Green
 Write-Host "[INFO] Please fill in API Key etc on the config page and save" -ForegroundColor Green
 Write-Host "[INFO] Then switch to the run page, enter username and click start" -ForegroundColor Green
-& uv run python -m boss_zhipin.web
+& uv run python -m toushi.web
 
 Write-Host ""
 Write-Host "[INFO] Web Frontend has stopped. If you encounter issues, please check the logs above or use the 'Ask AI for help' feature." -ForegroundColor Green

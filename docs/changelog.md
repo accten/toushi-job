@@ -18,7 +18,7 @@ documents:
 ## 2026-06-30 — 修复登录态误判 (PR #29)
 
 ### 变更内容
-- `src/boss_zhipin/website_oper/finding_jobs.py`：抽出纯函数 `_is_logged_in_from_page_state`，
+- `src/toushi/website_oper/finding_jobs.py`：抽出纯函数 `_is_logged_in_from_page_state`，
   在原 `login-wall` 浮层之外，新增「顶部登录按钮」+「正文登录提示文本」两类未登录信号。
 - `tests/test_finding_jobs_text.py`：补登录页 URL / 顶部登录入口 / 登录提示文本 / 已登录页面 4 个回归测试。
 

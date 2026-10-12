@@ -3,7 +3,7 @@
 // 这俩 Python 端要用的工厂函数暴露给 pytauri 运行时。
 //
 // 没有自定义 Rust command——所有业务逻辑在 Python 端的
-// `boss_zhipin.tauri` 包里，用 @commands.command 注册。
+// `toushi.tauri` 包里，用 @commands.command 注册。
 use pyo3::prelude::*;
 
 pub fn tauri_generate_context() -> tauri::Context {

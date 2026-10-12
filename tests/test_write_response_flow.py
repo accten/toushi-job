@@ -8,8 +8,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from boss_zhipin.audit import ValidationResult
-from boss_zhipin.website_oper import write_response
+from toushi.audit import ValidationResult
+from toushi.website_oper import write_response
 
 
 LETTER = "您好，我对这个岗位很感兴趣，也具备相关项目经验，期待进一步沟通。"

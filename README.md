@@ -8,6 +8,16 @@
 
 ---
 
+## 这个仓库是怎么来的
+
+- **起因很朴素：我自己要用。** 求职那阵子每天要翻几十个岗位——点开、读 JD、判断配不配、再想开场白，重复劳动占掉大半时间，于是开始写脚本。
+- **改着改着就改多了。** 加了智联招聘、加了 LLM 岗位匹配打分、加了招呼语发送前校验、加了风控识别与页面自愈、加了桌面 App 和成本统计……跟最开始那份脚本已经不是一个东西了。
+- **既然都改了这么多，就整理出来分享。** 你用得上最好；用不上，也可以单独看看其中某一块是怎么做的。
+- **欢迎提交 issue。** 跑不通、有想法、想要某个功能，都直接开 issue 说。不过麻烦先读一遍下面这两节和 FAQ —— 很多坑那里已经写过了。
+- 这个仓库我本人一直在用，所以会长期维护；但**不接"提高频率 / 并发多开 / 绕风控"这一类需求**，理由见下。
+
+---
+
 ## ⚠️ 先说清楚：这是个什么项目，不是什么项目
 
 - **它是**：一个**个人求职辅助工具**。帮你把「一份份点开岗位、看 JD、判断配不配、想开场白」这件重复劳动自动化，把省下的时间留给你真正想聊的那几家。
@@ -80,7 +90,7 @@ uv sync                     # 安装全部依赖（含桌面 App 的 tauri 组�
 # 只要命令行、不要桌面 App：
 # uv sync --no-group tauri
 
-# 桌面 App 还要构建一次前端（产物落在 src/boss_zhipin/tauri/frontend/）
+# 桌面 App 还要构建一次前端（产物落在 src/toushi/tauri/frontend/）
 cd tauri-ui && npm install && npm run build && cd ..
 ```
 
@@ -138,16 +148,16 @@ BOSS_LABEL=后端开发(贵阳)      # BOSS 上真实存在的求职 tag（见�
 
 ```bash
 # 桌面 App（推荐，能实时看日志/进度/成本）
-uv run python -m boss_zhipin.tauri
+uv run python -m toushi.tauri
 # 或根目录的兼容入口（同样启动桌面 App）
 uv run main.py
 
 # 命令行
-uv run python -m boss_zhipin.cli --platform boss      # BOSS：发招呼语
-uv run python -m boss_zhipin.cli --platform zhilian   # 智联：只投递
+uv run python -m toushi.cli --platform boss      # BOSS：发招呼语
+uv run python -m toushi.cli --platform zhilian   # 智联：只投递
 
 # 先干跑一遍（只生成不发送，强烈建议第一次这么跑）
-DRY_RUN=1 uv run python -m boss_zhipin.cli --platform boss
+DRY_RUN=1 uv run python -m toushi.cli --platform boss
 ```
 
 ---
@@ -184,7 +194,7 @@ DRY_RUN=1 uv run python -m boss_zhipin.cli --platform boss
 ├── main.py                     # 兼容入口，委托桌面 App
 ├── pyproject.toml / uv.lock    # 依赖（uv 管理）
 ├── .env.example                # 环境变量样板
-├── src/boss_zhipin/
+├── src/toushi/
 │   ├── cli.py                  # CLI 入口 + 平台配置（BOSS / 智联）
 │   ├── providers.py            # LLM 端点预设（只是便利，不是支持范围）
 │   ├── audit/                  # 招呼语校验（validate_letter）+ 审计日志 + telemetry
@@ -213,7 +223,7 @@ DRY_RUN=1 uv run python -m boss_zhipin.cli --platform boss
 uv run pytest tests/ -v                 # 全部单测
 BOSS_RETRY_BASE_DELAY=0.01 uv run pytest tests/ -v   # 加速 retry 相关用例
 
-# 改前端后要重新构建（产物落在 src/boss_zhipin/tauri/frontend/）
+# 改前端后要重新构建（产物落在 src/toushi/tauri/frontend/）
 cd tauri-ui && npm install && npm run build
 ```
 
@@ -252,6 +262,25 @@ WebView2 需要往 `%LOCALAPPDATA%<app-id>\EBWebView` 写用户数据目录。�
 ---
 
 ## 致谢
+
+### 上游项目
+
+「投石」不是从零开始的，它脱胎于 **BOSS 直聘自动打招呼脚本**：
+
+- 仓库：[**longsizhuo/BossZhiPin_Job_Search**](https://github.com/longsizhuo/BossZhiPin_Job_Search)
+- 作者 / 维护者：[@longsizhuo](https://github.com/longsizhuo)、[@TinyAlmond](https://github.com/TinyAlmond)
+
+沿用了上游的这些东西，功劳属于原作者：浏览器自动化骨架（`nodriver` 选型、sync facade + async impl
+的桥接方式）、`validate_letter` 招呼语校验的思路与规则、prompt 骨架、`.env` 配置约定、
+持久化 Chrome profile 的登录态方案，以及中文 wiki / ADR 的写法。
+
+智联招聘适配、LLM 岗位匹配打分、页面重载与 CDP 会话自愈、岗位间随机节流、前端界面重做、
+成本统计等，是本仓库新增或重写的部分。
+
+> **原仓库仍在维护。** 如果你只需要 BOSS 直聘那一半，直接用它就好；顺手给它点个 star ——
+> 没有它就没有这个项目。上游的部分 commit 链接仍指向原仓库，这是有意保留的，方便对照改动来源。
+
+### 依赖
 
 - [nodriver](https://github.com/ultrafunkamsterdam/nodriver) —— CDP 直连的浏览器自动化
 - [Chroma](https://www.trychroma.com/) + [sentence-transformers](https://www.sbert.net/) —— 简历向量召回

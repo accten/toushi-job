@@ -10,7 +10,7 @@
 #   $env:BOSS_PYEMBED_REBUILD = '1'; .\scripts\build_standalone.ps1   # 强制重建 pyembed
 #
 # 产物：
-#   src-tauri\target\bundle-release\boss-zhipin.exe                  （raw exe）
+#   src-tauri\target\bundle-release\toushi.exe                  （raw exe）
 #   src-tauri\target\bundle-release\bundle\nsis\*-setup.exe          （NSIS 安装器）
 #   src-tauri\target\bundle-release\bundle\msi\*.msi                 （MSI 安装器）
 #
@@ -19,7 +19,7 @@
 #   - uv（用于装嵌入式 Python + 业务包）
 #   - pnpm（前端构建）
 #   - 不需要 install_name_tool / otool：Windows PE 解析 DLL 是同目录优先，
-#     bundle 后 python313.dll 跟 boss-zhipin.exe 同级即可
+#     bundle 后 python313.dll 跟 toushi.exe 同级即可
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -93,13 +93,13 @@ Write-Host "==> 嵌入式 Python: $PyVersion"
 
 # ---------- 2. macOS：libpython install_name 打 @rpath 补丁 ----------
 # Windows 不需要。PE 加载器优先在 exe 同目录找 DLL，pyembed 的 python313.dll
-# 在 bundle 里跟 boss-zhipin.exe 拷一起就行（见 tauri.bundle.json resources）。
+# 在 bundle 里跟 toushi.exe 拷一起就行（见 tauri.bundle.json resources）。
 
 # ---------- 3. 把业务包 + 依赖装进嵌入式环境 ----------
 # --break-system-packages：uv 把自己装的 python-build-standalone 标成 PEP 668
 # "externally managed"，默认拒绝 pip 写入。本场景就是要往里写，加 flag 放行。
 # （macOS 的 .sh 没踩到大概是早期 uv 没强制，新版 uv 两边都会拦。）
-Write-Host "==> 安装 boss_zhipin + 依赖到 pyembed（首次会拉 torch，较慢）"
+Write-Host "==> 安装 toushi + 依赖到 pyembed（首次会拉 torch，较慢）"
 $env:PYTAURI_STANDALONE = '1'
 uv pip install --exact --compile-bytecode --break-system-packages `
     "--python=$EmbedPy" `
@@ -150,10 +150,10 @@ if ($LASTEXITCODE -ne 0) { throw "tauri build 失败（exit $LASTEXITCODE）" }
 
 # ---------- 6. 产物自检 ----------
 $TargetRoot = Join-Path $RepoRoot 'src-tauri\target'
-$ExeMatches = Get-ChildItem -Path $TargetRoot -Recurse -Filter 'boss-zhipin.exe' `
+$ExeMatches = Get-ChildItem -Path $TargetRoot -Recurse -Filter 'toushi.exe' `
     -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -match 'bundle-release' }
-if (-not $ExeMatches) { throw "没找到 boss-zhipin.exe 产物——cargo build 没成？" }
+if (-not $ExeMatches) { throw "没找到 toushi.exe 产物——cargo build 没成？" }
 $Exe = $ExeMatches[0].FullName
 Write-Host "==> raw exe: $Exe"
 

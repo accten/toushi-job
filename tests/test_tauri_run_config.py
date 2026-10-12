@@ -8,7 +8,7 @@ from __future__ import annotations
 
 
 def test_run_config_keeps_platform_from_frontend():
-    from boss_zhipin.tauri import RunConfig
+    from toushi.tauri import RunConfig
 
     # 前端 pyInvoke("start_run", { config: {...config, platform}, ... }) 就是这个形状
     cfg = RunConfig(
@@ -20,6 +20,6 @@ def test_run_config_keeps_platform_from_frontend():
 
 
 def test_run_config_platform_defaults_to_boss():
-    from boss_zhipin.tauri import RunConfig
+    from toushi.tauri import RunConfig
 
     assert RunConfig(usr_name="x").platform == "boss"

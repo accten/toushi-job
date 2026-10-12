@@ -7,7 +7,7 @@
 ## 背景
 
 桌面 GUI（PyTauri）此前只有 wheel dev 模式：用户必须 clone 仓库、装 uv、
-`uv sync` 再 `uv run python -m boss_zhipin.tauri`。对目标用户
+`uv sync` 再 `uv run python -m toushi.tauri`。对目标用户
 （找工作的非程序员朋友）这条链路太长——Phase D 的目标是发一个**双击就能跑**
 的 .app。
 
@@ -37,9 +37,9 @@
 
 | | wheel dev 模式 | standalone 模式 |
 |---|---|---|
-| 主进程 | Python（`python -m boss_zhipin.tauri`） | Rust binary |
+| 主进程 | Python（`python -m toushi.tauri`） | Rust binary |
 | Tauri 来源 | `pytauri-wheel` 预编译 binary | `src-tauri/` 自己编译 |
-| Tauri 配置 | 运行时读 `src/boss_zhipin/tauri/Tauri.toml` | 编译期 `generate_context!` 嵌入 |
+| Tauri 配置 | 运行时读 `src/toushi/tauri/Tauri.toml` | 编译期 `generate_context!` 嵌入 |
 | capabilities | `tauri/capabilities/default.toml` | `src-tauri/capabilities/default.json` |
 | CWD / 数据目录 | repo root（历史行为） | `paths.ensure_app_data_cwd()` → `~/Library/Application Support/com.longsizhuo.toushi` |
 
@@ -92,7 +92,7 @@
 风险点（暂未实测，标 TODO）：
 
 - `tauri.bundle.json` 的 `"pyembed/python": "./"` 在 Windows 的 NSIS/MSI 里
-  把 `python313.dll` 放在跟 `boss-zhipin.exe` 同级——这是 DLL 同目录优先
+  把 `python313.dll` 放在跟 `toushi.exe` 同级——这是 DLL 同目录优先
   解析能命中的位置。如果改成放 `resources/` 子目录，启动会找不到 DLL。
 - `RUSTFLAGS` 按 whitespace 切，路径里有空格（``C:\Program Files\...``）
   会炸。本仓库默认在无空格盘下（`E:\BossZhiPin_Job_Search`），不预先优化；

@@ -10,7 +10,7 @@ import os
 import pytest
 from pypdf import PdfWriter
 
-from boss_zhipin.gui import resume_io
+from toushi.gui import resume_io
 
 
 @pytest.fixture

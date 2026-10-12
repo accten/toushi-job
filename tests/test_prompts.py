@@ -1,7 +1,7 @@
 """招呼语 prompt 模板：默认风格 + 可配置覆盖（BOSS_LETTER_PROMPT）。"""
 import pytest
 
-from boss_zhipin.models.prompts import (
+from toushi.models.prompts import (
     DEFAULT_LETTER_PROMPT,
     LETTER_PROMPT_ENV,
     assistant_instructions,

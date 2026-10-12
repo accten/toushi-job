@@ -9,10 +9,10 @@ use pytauri::standalone::{
 };
 use tauri::utils::platform::resource_dir;
 
-use boss_zhipin_lib::{ext_mod, tauri_generate_context};
+use toushi_lib::{ext_mod, tauri_generate_context};
 
 fn main() -> Result<Infallible, Box<dyn Error>> {
-    // 告诉 boss_zhipin.tauri 用 standalone 分支（用 pytauri 而非 pytauri-wheel）
+    // 告诉 toushi.tauri 用 standalone 分支（用 pytauri 而非 pytauri-wheel）
     std::env::set_var("BOSS_TAURI_STANDALONE", "1");
 
     let py_env = if cfg!(dev) {
@@ -37,8 +37,8 @@ fn main() -> Result<Infallible, Box<dyn Error>> {
         PythonInterpreterEnv::Standalone(resource_dir.into())
     };
 
-    // 等价于 `python -m boss_zhipin.tauri` —— 跑 boss_zhipin/tauri/__main__.py
-    let py_script = PythonScript::Module("boss_zhipin.tauri".into());
+    // 等价于 `python -m toushi.tauri` —— 跑 toushi/tauri/__main__.py
+    let py_script = PythonScript::Module("toushi.tauri".into());
 
     // 把 ext_mod 在内存里注册给 pytauri 运行时（不需要单独编译成 .so/.dylib）
     let builder =

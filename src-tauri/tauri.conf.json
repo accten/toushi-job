@@ -7,7 +7,7 @@
     "beforeDevCommand": "pnpm --dir ../tauri-ui dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm --dir ../tauri-ui build",
-    "frontendDist": "../src/boss_zhipin/tauri/frontend",
+    "frontendDist": "../src/toushi/tauri/frontend",
     "features": ["pytauri/standalone"]
   },
   "app": {

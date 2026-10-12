@@ -40,8 +40,8 @@
 
 ```
 .
-├── main.py                       # 兼容 shim，委托 boss_zhipin.cli（uv run main.py 仍可用）
-├── src/boss_zhipin/              # 业务代码都在这个可安装 package 里（src/ 布局）
+├── main.py                       # 兼容 shim，委托 toushi.cli（uv run main.py 仍可用）
+├── src/toushi/              # 业务代码都在这个可安装 package 里（src/ 布局）
 │   ├── cli.py                    # CLI 入口，env 校验（run_provider 是 CLI/GUI 共用的主循环入口）
 │   ├── providers.py              # 轻量元数据：LLM_PRESETS（常用端点快捷）+ is_llm_configured
 │   ├── audit/
@@ -57,7 +57,7 @@
 │   │   ├── finding_jobs.py       # nodriver 浏览器自动化
 │   │   └── write_response.py     # 主循环：JD → LLM → 校验 → 发送/日志
 │   ├── gui/                      # 桌面 App 胶水层（events/runner/log_bridge/env_io/history）
-│   └── tauri/                    # PyTauri 桌面 App（python -m boss_zhipin.tauri）
+│   └── tauri/                    # PyTauri 桌面 App（python -m toushi.tauri）
 ├── tests/                        # pytest 单测，每个核心模块对应一个 test_X.py
 ├── docs/wiki/                    # 中文 wiki + ADR
 ├── .github/workflows/ci.yml      # GitHub Actions

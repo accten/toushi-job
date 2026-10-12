@@ -86,7 +86,7 @@ echo "==> libpython install_name 已设为 @rpath/$(basename "$libpython")"
 # --break-system-packages：uv 把 python-build-standalone 标 PEP 668
 # "externally managed"，默认拒绝 pip 写入；本场景就是要往里写，加 flag 放行。
 # （2026-06-07 在 Windows 端 .ps1 上踩到，mac 上当时 uv 版本旧没拦，新 uv 两边都会拦。）
-echo "==> 安装 boss_zhipin + 依赖到 pyembed（首次会拉 torch，较慢）"
+echo "==> 安装 toushi + 依赖到 pyembed（首次会拉 torch，较慢）"
 PYTAURI_STANDALONE=1 uv pip install \
     --exact \
     --compile-bytecode \
@@ -133,7 +133,7 @@ cd "$REPO_ROOT"
 # ---------- 6. 产物自检 ----------
 APP=$(find "$REPO_ROOT/src-tauri/target" -maxdepth 4 -name "*.app" -path "*bundle-release*" | head -1)
 [[ -n "$APP" ]] || { echo "❌ 没找到 .app 产物"; exit 1; }
-BIN="$APP/Contents/MacOS/boss-zhipin"
+BIN="$APP/Contents/MacOS/toushi"
 echo "==> 自检：binary 应链接 @rpath/libpython3.x，不能出现 Python3.framework"
 if otool -L "$BIN" | grep -q "Python3.framework"; then
     echo "❌ binary 链接到了系统 Python3.framework——PYO3_PYTHON 没生效？"

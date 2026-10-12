@@ -10,7 +10,7 @@ import types
 
 import pytest
 
-from boss_zhipin.models import llm
+from toushi.models import llm
 
 
 @pytest.fixture(autouse=True)

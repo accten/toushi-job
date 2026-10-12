@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from boss_zhipin.gui import llm_config as lc
+from toushi.gui import llm_config as lc
 
 
 @pytest.fixture

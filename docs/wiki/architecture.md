@@ -70,7 +70,7 @@
 按简历 PDF 的 MD5 建一个独立的持久化目录 `vectorstores/<md5>/`，之后跑同样的
 PDF 就直接 reload，不需要重新 embedding。
 
-### 通用 OpenAI 兼容端点（[models/llm.py](../../models/llm.py) + [providers.py](../../src/boss_zhipin/providers.py)）
+### 通用 OpenAI 兼容端点（[models/llm.py](../../models/llm.py) + [providers.py](../../src/toushi/providers.py)）
 代码**不认牌子**：只 import `openai`，统一一个端点 = `LLM_BASE_URL` + `LLM_API_KEY`
 + `LLM_MODEL`。`llm._build_client()` 无参，call-time 读这三个 env。DeepSeek /
 OpenAI / Claude / 通义千问 / 智谱GLM / 豆包 / Kimi / 本地 Ollama 等都走同一条路，

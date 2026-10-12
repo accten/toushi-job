@@ -1,4 +1,4 @@
-"""``boss_zhipin.paths`` 的单测——standalone 数据目录解析。"""
+"""``toushi.paths`` 的单测——standalone 数据目录解析。"""
 from __future__ import annotations
 
 import os
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from boss_zhipin import paths
+from toushi import paths
 
 # Linux 分支用例会 ``monkeypatch.setattr(os, "name", "posix")``——
 # Python 3.13 起在 Windows 上禁止实例化 PosixPath，这两个用例在 Windows
