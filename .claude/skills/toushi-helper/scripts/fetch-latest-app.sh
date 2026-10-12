@@ -13,7 +13,7 @@
 # 零依赖（只要 curl）；装了 gh 也行，但本脚本走公开 API 免鉴权，不强制 gh。
 set -euo pipefail
 
-REPO="longsizhuo/BossZhiPin_Job_Search"
+REPO="accten/toushi-job"
 API="https://api.github.com/repos/${REPO}/releases/latest"
 
 # ── 1. 识别平台 → 选资产后缀 ────────────────────────────────────────────

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# BossZhiPin_Job_Search 一键启动脚本
+# 投石 · Toushi 一键启动脚本
 # 支持 Windows (Git Bash) 环境下的交互式启动
 
 # 颜色定义

@@ -19,8 +19,8 @@
 
 ```bash
 # 1. fork + clone
-git clone https://github.com/<你的用户名>/BossZhiPin_Job_Search.git
-cd BossZhiPin_Job_Search
+git clone https://github.com/accten/toushi-job.git
+cd toushi-job
 
 # 2. 装依赖
 uv sync
@@ -144,7 +144,8 @@ PR 合并前必须满足：
 ## 维护者联系
 
 - GitHub issue：日常问题首选
-- @longsizhuo / @TinyAlmond：长期维护人
+- @accten：本仓库维护者
+- @longsizhuo / @TinyAlmond：上游原维护者
 
 ---
 

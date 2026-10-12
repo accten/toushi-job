@@ -1,6 +1,6 @@
-# BossZhiPin_Job_Search Web Frontend Startup Script (PowerShell version)
+# 投石 · Toushi Web Frontend Startup Script (PowerShell version)
 
-Write-Host "[INFO] BossZhiPin_Job_Search Web Frontend Startup Script" -ForegroundColor Green
+Write-Host "[INFO] 投石 · Toushi Web Frontend Startup Script" -ForegroundColor Green
 
 # Set sandbox disable for Boss ZhiPin (Windows usually needs this)
 $env:BOSS_NO_SANDBOX = "1"
@@ -27,7 +27,7 @@ if (-not (Test-Path .env)) {
 }
 
 Write-Host ""
-Write-Host "[INFO] Starting BossZhiPin_Job_Search Web Frontend..." -ForegroundColor Green
+Write-Host "[INFO] Starting 投石 · Toushi Web Frontend..." -ForegroundColor Green
 Write-Host "[INFO] Please access http://localhost:5000 in your browser to use the interface" -ForegroundColor Green
 Write-Host "[INFO] Please fill in API Key etc on the config page and save" -ForegroundColor Green
 Write-Host "[INFO] Then switch to the run page, enter username and click start" -ForegroundColor Green

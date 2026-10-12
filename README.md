@@ -84,8 +84,8 @@
 ### 1. 安装
 
 ```bash
-git clone <你的仓库地址>
-cd <仓库目录>
+git clone https://github.com/accten/toushi-job.git
+cd toushi-job
 uv sync                     # 安装全部依赖（含桌面 App 的 tauri 组）
 # 只要命令行、不要桌面 App：
 # uv sync --no-group tauri

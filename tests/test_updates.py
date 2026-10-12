@@ -34,7 +34,7 @@ def test_check_latest_release_happy(monkeypatch):
     monkeypatch.setattr(
         updates,
         "_fetch_latest_tag",
-        lambda timeout: ("0.5.0", "https://github.com/longsizhuo/BossZhiPin_Job_Search/releases/tag/v0.5.0"),
+        lambda timeout: ("0.5.0", "https://github.com/accten/toushi-job/releases/tag/v0.5.0"),
     )
 
     result = updates.check_latest_release()
@@ -60,4 +60,4 @@ def test_check_latest_release_network_error_degrades(monkeypatch):
     assert result["latest"] == ""
     assert result["current"] == "0.4.1"
     # 降级也要给个可点的 releases 兜底链接
-    assert str(result["url"]).startswith("https://github.com/longsizhuo/BossZhiPin_Job_Search/releases")
+    assert str(result["url"]).startswith("https://github.com/accten/toushi-job/releases")

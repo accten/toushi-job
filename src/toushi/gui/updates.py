@@ -25,7 +25,7 @@ from packaging.version import InvalidVersion, Version
 log = logging.getLogger(__name__)
 
 # 发布仓库，跟 git remote 对齐。GitHub API 用同一个 owner/repo。
-REPO = "longsizhuo/BossZhiPin_Job_Search"
+REPO = "accten/toushi-job"
 _DIST_NAME = "toushi"
 _API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 _RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"

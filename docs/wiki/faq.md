@@ -164,6 +164,6 @@ tail logs/llm_calls.jsonl | jq '{provider, model, total_tokens, cost_cny, latenc
 [CONTRIBUTING.md](../../CONTRIBUTING.md) "Help wanted" 部分。
 
 ### 项目会持续维护吗？
-当前两个 maintainer：[@longsizhuo](https://github.com/longsizhuo)、
-[@TinyAlmond](https://github.com/TinyAlmond)。脚本是个人求职辅助工具，维护节奏
+本仓库（投石 · Toushi）的 maintainer：[@accten](https://github.com/accten)。
+上游原维护者：[@longsizhuo](https://github.com/longsizhuo)、[@TinyAlmond](https://github.com/TinyAlmond)。脚本是个人求职辅助工具，维护节奏
 跟"作者们还在找工作 / 还能挤出业余时间"挂钩。

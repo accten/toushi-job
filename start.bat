@@ -1,5 +1,5 @@
 @echo off
-:: BossZhiPin_Job_Search 一键启动脚本 (Windows批处理版)
+:: 投石 · Toushi 一键启动脚本 (Windows 批处理版)
 :: 交互式选择平台、运行模式和启动方式
 
 :: 颜色定义（仅在支持的终端中有效）

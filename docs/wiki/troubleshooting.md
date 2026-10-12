@@ -295,7 +295,7 @@ codesign --force --deep -s - "/Applications/Toushi.app"
 
 ## 还是不行？
 
-提 issue：https://github.com/longsizhuo/BossZhiPin_Job_Search/issues
+提 issue：https://github.com/accten/toushi-job/issues
 
 issue 里附上：
 

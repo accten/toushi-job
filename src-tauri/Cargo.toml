@@ -8,7 +8,7 @@
 name = "toushi"
 version = "0.6.0"
 description = "Toushi (PyTauri standalone)"
-authors = ["longsizhuo"]
+authors = ["accten"]
 edition = "2021"
 
 [lib]
