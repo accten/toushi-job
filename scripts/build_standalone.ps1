@@ -126,15 +126,24 @@ if (Test-Path -PathType Leaf $BuildMarker) {
 #
 # 只拷 snapshots 那一层：Windows 上 HuggingFace 缓存是复制不是硬链接，
 # models\ 里 blobs 和 snapshots 各占一份（837MB），真正要的只有 418MB 那份。
+# 模型有三种来路，按优先级：
+#   1. pyembed\models 已经有了（上次跑过）→ 跳过
+#   2. 仓库里有 models\hub\...（本地开发机）→ 拷去重后的快照目录
+#   3. 都没有（CI / 新克隆）→ 直接从 HuggingFace 拉一份平铺在 pyembed\models
+#      （418MB，CI 上跑几分钟；本地开发机一般是走 2，不会重下）
+$ModelRepo = 'sentence-transformers/all-mpnet-base-v2'
+$ModelRevision = 'e8c3b32edf5434bc2275fc9bab85f82640a19130'
 $ModelDst = Join-Path $PyembedDir 'models'
-if (-not (Test-Path (Join-Path $ModelDst 'hub'))) {
+if (Test-Path (Join-Path $ModelDst 'config.json')) {
+    Write-Host "==> 嵌入模型已在 pyembed\models，跳过"
+} elseif (Test-Path (Join-Path $RepoRoot 'models\hub')) {
     $Snapshot = Get-ChildItem -Path (Join-Path $RepoRoot 'models\hub') -Recurse -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -eq 'snapshots' } |
         ForEach-Object { Get-ChildItem $_.FullName -Directory } |
         Where-Object { Test-Path (Join-Path $_.FullName 'config.json') } |
         Select-Object -First 1
     if (-not $Snapshot) {
-        throw "仓库里找不到嵌入模型快照（models\hub\<repo>\snapshots\<hash>\config.json）。装出来的 App 没模型会崩 —— 见 docs/packaging-windows.md"
+        throw "仓库里有 models\hub 但找不到完整快照（缺 config.json）—— 见 docs/packaging-windows.md"
     }
     $RepoId = $Snapshot.Parent.Parent.Name
     $Target = Join-Path $ModelDst (Join-Path 'hub' (Join-Path $RepoId (Join-Path 'snapshots' $Snapshot.Name)))
@@ -142,7 +151,14 @@ if (-not (Test-Path (Join-Path $ModelDst 'hub'))) {
     New-Item -ItemType Directory -Path $Target -Force | Out-Null
     Copy-Item -Path (Join-Path $Snapshot.FullName '*') -Destination $Target -Recurse -Force
 } else {
-    Write-Host "==> 嵌入模型已在 pyembed\models，跳过拷贝（要重来就先删掉那个目录）"
+    Write-Host "==> 仓库里没有 models\，从 HuggingFace 拉一份到 pyembed\models（约 418MB）"
+    New-Item -ItemType Directory -Path $ModelDst -Force | Out-Null
+    # 用 uv 的临时环境跑 hf CLI：不在项目依赖里塞 huggingface_hub（它只在打包期用）。
+    uv run --no-project --with huggingface_hub hf download $ModelRepo --revision $ModelRevision --local-dir $ModelDst
+    if ($LASTEXITCODE -ne 0) { throw "嵌入模型下载失败（exit $LASTEXITCODE）—— 见 docs/packaging-windows.md" }
+    if (-not (Test-Path (Join-Path $ModelDst 'config.json'))) {
+        throw "模型下载完了但 $ModelDst 里没有 config.json，打包会出个没模型的安装包"
+    }
 }
 
 # ---------- 4. Rust 链接参数 ----------

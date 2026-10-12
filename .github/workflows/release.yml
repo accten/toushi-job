@@ -124,9 +124,34 @@ jobs:
         shell: bash
         run: rm -rf src-tauri/target/bundle-release/bundle
 
-      # 跑你本地一直在用的 build 脚本，不重新发明轮子
+      # 跑你本地一直在用的 build 脚本，不重新发明轮子。
+      # 外面套一层 bash：脚本挂了的话把最后几行吐成 ::error:: annotation。
+      # 为什么要这么绕：公开仓库的 job log 走 API 拉要 admin 权限，annotation
+      # 不用 —— 打包失败时全靠它把真正的原因带出来，否则只能看到一个
+      # 「Process completed with exit code 1」。
       - name: Run build script
-        run: ${{ matrix.script }}
+        shell: bash
+        run: |
+          set -o pipefail
+          ${{ matrix.script }} 2>&1 | tee build-output.log || status=$?
+          status=${status:-0}
+          if [ "$status" -ne 0 ]; then
+            echo "---- build failed (exit $status); last 8 lines as annotations ----"
+            tail -n 8 build-output.log | while IFS= read -r line; do
+              echo "::error::${line//'%'/'%25'}"
+            done
+            exit "$status"
+          fi
+
+      # 失败时把完整日志也存一份 artifact（annotation 只带最后 8 行）
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.artifact_name }}
+          path: build-output.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       # 把这一端的产物（mac: dmg；windows: exe + msi）打成 artifact 给 release job 用
       - name: Upload bundle artifacts

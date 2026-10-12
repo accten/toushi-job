@@ -41,6 +41,21 @@ jobs:
         run: |
           # Phase D-pre 后：业务代码全部进 toushi/，根目录 main.py 仅
           # 是向后兼容 shim。CI 同时校验两侧：(1) 包导入，(2) main.py shim 能 import。
+          #
+          # 每条命令跑一遍；挂了就把 traceback 的最后几行吐成 ::error:: annotation。
+          # 为什么要这么绕：公开仓库的 job log 走 API 拉要 admin 权限，annotation
+          # 不用 —— 排查 CI 失败时这点差别决定能不能定位问题。
+          fail=0
+          while IFS= read -r cmd; do
+            [ -z "$cmd" ] && continue
+            if ! out=$(eval "$cmd" 2>&1); then
+              echo "::error title=smoke import failed::$cmd"
+              printf '%s\n' "$out" | tail -n 6 | while IFS= read -r line; do
+                echo "::error::${line//'%'/'%25'}"
+              done
+              fail=1
+            fi
+          done <<'SMOKE'
           uv run python -c "import main"
           uv run python -c "import toushi"
           uv run python -c "from toushi.providers import LLM_PRESETS, is_llm_configured, LLM_API_KEY_ENV, LLM_BASE_URL_ENV, LLM_MODEL_ENV"
@@ -67,6 +82,12 @@ jobs:
           uv run python -c "from toushi.gui.resume_io import store_resume, current_resume, DEFAULT_RESUME_PATH"
           uv run python -c "from toushi.gui.history import read_letters"
           uv run python -c "from toushi.gui.updates import check_latest_release, is_newer, current_version, REPO"
+          SMOKE
+          if [ "$fail" -ne 0 ]; then
+            echo "smoke import check 有失败项，见上面的 annotation"
+            exit 1
+          fi
+          echo "smoke import check 全过"
 
       - name: 跑 pytest
         run: uv run pytest tests/ -v --tb=short
