@@ -53,11 +53,14 @@ jobs:
             label: Windows (x64)
             script: pwsh -ExecutionPolicy Bypass -File scripts/build_standalone.ps1
             artifact_name: windows-x64
+            # 只收 NSIS：MSI(WiX) 的 light.exe 扛不住这个体积（3.7GB payload
+            # 实测直接失败），而且个人用户双击 -setup.exe 就够了。
             artifact_path: |
               src-tauri/target/bundle-release/bundle/nsis/*.exe
-              src-tauri/target/bundle-release/bundle/msi/*.msi
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # 冷缓存要下模型（约 420MB）+ torch + 编 Rust，60 分钟曾经不够（第一轮
+    # Windows 跑到 25 分钟还没进 tauri build）。留足余量。
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 

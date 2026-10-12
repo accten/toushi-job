@@ -142,8 +142,12 @@ elif [[ -d "$REPO_ROOT/models/hub" ]]; then
 else
     echo "==> 仓库里没有 models/，从 HuggingFace 拉一份到 pyembed/models（约 418MB）"
     mkdir -p "$MODEL_DST"
+    # --include 只拉推理要的文件：不加的话 HF 仓库里的 pytorch_model.bin /
+    # onnx/ 变体也会一起下来，白白多几百 MB。
     uv run --no-project --with huggingface_hub hf download "$MODEL_REPO" \
-        --revision "$MODEL_REVISION" --local-dir "$MODEL_DST"
+        --revision "$MODEL_REVISION" \
+        --include '*.json' --include '*.txt' --include 'model.safetensors' \
+        --local-dir "$MODEL_DST"
     if [[ ! -f "$MODEL_DST/config.json" ]]; then
         echo "模型下载完了但 $MODEL_DST 里没有 config.json，打包会出个没模型的安装包" >&2
         exit 1
@@ -168,7 +172,23 @@ echo "==> tauri build（bundle-release profile）"
 # 注意必须从 repo root 跑——tauri CLI 只往**子目录**找 src-tauri/tauri.conf.json，
 # 从 tauri-ui/ 里跑会 "Couldn't recognize the current folder as a Tauri project"。
 cd "$REPO_ROOT"
+# 体积诊断：安装包为什么这么大，先看是哪一块占的
+for d in "$MODEL_DST" "$PYEMBED_DIR/python" "$PYEMBED_DIR" "$REPO_ROOT/tauri-ui/node_modules"; do
+    if [[ -e "$d" ]]; then
+        line="体积 $d = $(du -sm "$d" 2>/dev/null | cut -f1) MB"
+        echo "==> $line"
+        # CI 里额外发一条 notice：公开仓库的 job log 走 API 拉要 admin，
+        # 只有 annotation 读得到 —— 体积数据得走这条路才能被看见。
+        if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then echo "::notice::$line"; fi
+    fi
+done
+
+# --bundles dmg：只出 DMG。配 Windows 那边的 --bundles nsis 一起看：
+# tauri.conf.json 里 targets = "all" 是给本地 dev 用的，CI 上显式指定免得
+# 平台不认识对方的 bundle 类型（Windows 的 MSI 也会因 WiX light.exe 扛不住
+# 这个体积直接失败）。
 "$REPO_ROOT/tauri-ui/node_modules/.bin/tauri" build \
+    --bundles dmg \
     --config "$REPO_ROOT/src-tauri/tauri.bundle.json" \
     -- --profile bundle-release
 

@@ -154,7 +154,12 @@ if (Test-Path (Join-Path $ModelDst 'config.json')) {
     Write-Host "==> 仓库里没有 models\，从 HuggingFace 拉一份到 pyembed\models（约 418MB）"
     New-Item -ItemType Directory -Path $ModelDst -Force | Out-Null
     # 用 uv 的临时环境跑 hf CLI：不在项目依赖里塞 huggingface_hub（它只在打包期用）。
-    uv run --no-project --with huggingface_hub hf download $ModelRepo --revision $ModelRevision --local-dir $ModelDst
+    # --include 只拉推理要的那几个文件：不加的话 HF 仓库里的 pytorch_model.bin /
+    # onnx/ 变体也会一起下来，白白多几百 MB。
+    uv run --no-project --with huggingface_hub hf download $ModelRepo `
+        --revision $ModelRevision `
+        --include '*.json' --include '*.txt' --include 'model.safetensors' `
+        --local-dir $ModelDst
     if ($LASTEXITCODE -ne 0) { throw "嵌入模型下载失败（exit $LASTEXITCODE）—— 见 docs/packaging-windows.md" }
     if (-not (Test-Path (Join-Path $ModelDst 'config.json'))) {
         throw "模型下载完了但 $ModelDst 里没有 config.json，打包会出个没模型的安装包"
@@ -181,12 +186,30 @@ $TauriUiDir = Join-Path $RepoRoot 'tauri-ui'
 pnpm --dir $TauriUiDir install --frozen-lockfile
 if ($LASTEXITCODE -ne 0) { throw "pnpm install 失败（exit $LASTEXITCODE）" }
 
+# 体积诊断：安装包为什么这么大，先看是哪一块占的
+foreach ($p in @($ModelDst, (Join-Path $PyembedDir 'python'), $PyembedDir, (Join-Path $RepoRoot 'tauri-ui\node_modules'))) {
+    if (Test-Path $p) {
+        $mb = [math]::Round(((Get-ChildItem $p -Recurse -File -ErrorAction SilentlyContinue |
+                Measure-Object Length -Sum).Sum / 1MB), 0)
+        $line = "体积 " + $p.Replace($RepoRoot, '.') + " = " + $mb + " MB"
+        Write-Host ("==> " + $line)
+        # CI 里额外发一条 notice：公开仓库的 job log 走 API 拉要 admin，
+        # 只有 annotation 读得到 —— 体积数据得走这条路才能被看见。
+        if ($env:GITHUB_ACTIONS -eq 'true') { Write-Host ("::notice::" + $line) }
+    }
+}
+
 Write-Host "==> tauri build（bundle-release profile）"
-# --config tauri.bundle.json：把 pyembed/python 作为 resources 打进 bundle；
+# --config tauri.bundle.json：把 pyembed/python + pyembed/models 作为 resources 打进 bundle；
 # 必须从 repo root 跑——tauri CLI 只往**子目录**找 src-tauri/tauri.conf.json。
+#
+# --bundles nsis：只出 NSIS 安装器，**不要 MSI**。原因有两条：
+#   1. WiX 的 light.exe 扛不住这个体积（实测 3.7GB payload 直接失败）；
+#   2. 个人用户双击 -setup.exe 就够了，MSI 是给企业 GPO 批量部署用的。
 $TauriBin = Join-Path $TauriUiDir 'node_modules\.bin\tauri.cmd'
 if (-not (Test-Path $TauriBin)) { throw "tauri CLI 没装：$TauriBin（pnpm install 失败？）" }
 & $TauriBin build `
+    --bundles nsis `
     --config (Join-Path $RepoRoot 'src-tauri\tauri.bundle.json') `
     -- --profile bundle-release
 if ($LASTEXITCODE -ne 0) { throw "tauri build 失败（exit $LASTEXITCODE）" }
