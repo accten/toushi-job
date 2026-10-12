@@ -35,6 +35,14 @@ jobs:
       - name: 安装依赖（frozen lockfile）
         run: uv sync --frozen
 
+      # main.py -> toushi.tauri -> pytauri-wheel 的原生扩展链到 libwebkit2gtk-4.1，
+      # headless runner 上没这个系统库，import 会直接 ImportError（Tauri 官方也要求
+      # Linux 构建装这一串）。不加这步，smoke check 在 Ubuntu 上永远是红的。
+      - name: 装 Linux WebView 运行库
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
+
       - name: Smoke import check
         # 没有真测试也能拦下"改名 / 移文件 / import 烂掉"那一类回归。
         # 每多一个核心模块就往这里加一行。
