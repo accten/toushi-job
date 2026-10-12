@@ -169,6 +169,16 @@ const zh: Dict = {
   "history.statProviderCalls": "{provider} · {calls} 次",
   "history.jdPreview": "岗位预览",
 
+  // ---- 嵌入模型（首次使用按需下载） ----
+  "run.modelMissingTitle": "首次使用：需要下载嵌入模型",
+  "run.modelMissingDesc": "用来把简历和岗位 JD 向量化比对。约 {mb}MB，只下一次，存在应用数据目录（重装/升级不会丢）。",
+  "run.modelDir": "下载到：{dir}",
+  "run.modelDownload": "下载模型",
+  "run.modelDownloading": "下载中…（进度见下面日志面板）",
+  "run.modelReady": "✓ 模型已就绪",
+  "run.modelDownloadFailed": "下载失败：{err}",
+  "err.needEmbedModel": "嵌入模型还没下载 —— 先点运行页上的「下载模型」",
+
   // ---- 外壳 / 状态栏 ----
   "app.tagline": "投石问路 · 只投对味的岗位",
   "theme.toDark": "切到深色",
@@ -403,6 +413,16 @@ const en: Dict = {
   "history.statTotalCost": "Total cost (¥)",
   "history.statProviderCalls": "{provider} · {calls} calls",
   "history.jdPreview": "JD Preview",
+
+  // ---- Embedding model (downloaded on first use) ----
+  "run.modelMissingTitle": "First run: the embedding model needs downloading",
+  "run.modelMissingDesc": "Used to compare your resume against each job description. About {mb}MB, downloaded once into the app data directory (kept across reinstalls and upgrades).",
+  "run.modelDir": "Downloading to: {dir}",
+  "run.modelDownload": "Download model",
+  "run.modelDownloading": "Downloading… (progress in the log panel below)",
+  "run.modelReady": "✓ Model ready",
+  "run.modelDownloadFailed": "Download failed: {err}",
+  "err.needEmbedModel": "The embedding model has not been downloaded yet — use the Download model button on the Run page",
 
   // ---- Shell / status bar ----
   "app.tagline": "Read the JD. Only apply where it fits.",

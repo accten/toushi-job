@@ -149,3 +149,46 @@ class TestFindModelSnapshot:
         assert app_data_dir() / "models" in roots
         # 没有重复项（重复会让"找过哪些位置"的报错信息很难看）
         assert len(roots) == len(set(roots))
+
+# ---------- 模型下载（安装包不带模型，首次使用时按需拉） ----------
+
+class TestModelDownload:
+    """模型不再随安装包走，改由 App 首次使用时下到应用数据目录。
+
+    这里只测不联网的部分：下载目标目录怎么算、已经有了会不会重复下。
+    真下载（几百 MB）不进单测。
+    """
+
+    def test_download_dir_defaults_to_app_data(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(MODEL_DIR_ENV, raising=False)
+        monkeypatch.setenv("BOSS_APP_DATA_DIR", str(tmp_path))
+        assert vectorization.model_download_dir() == tmp_path / "models"
+
+    def test_download_dir_honours_env_override(self, tmp_path, monkeypatch):
+        override = tmp_path / "elsewhere"
+        monkeypatch.setenv(MODEL_DIR_ENV, str(override))
+        assert vectorization.model_download_dir() == override
+
+    def test_download_dir_is_a_candidate_root(self, tmp_path, monkeypatch):
+        # 下到别处就白下了：下载目录必须在查找候选里，否则下完还是"找不到模型"
+        monkeypatch.delenv(MODEL_DIR_ENV, raising=False)
+        monkeypatch.setenv("BOSS_APP_DATA_DIR", str(tmp_path))
+        assert vectorization.model_download_dir() in vectorization._candidate_model_roots()
+
+    def test_is_model_available_tracks_find_snapshot(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(vectorization, "_candidate_model_roots", lambda: [tmp_path])
+        assert vectorization.is_model_available() is False
+        snap = tmp_path / "hub" / EMBED_MODEL_REPO_ID / "snapshots" / "abc"
+        snap.mkdir(parents=True)
+        (snap / "config.json").write_text("{}", encoding="utf-8")
+        assert vectorization.is_model_available() is True
+
+    def test_download_model_is_noop_when_already_present(self, tmp_path, monkeypatch):
+        # 幂等：已经有了就直接返回，一次网络都不发（这里也没网可发）
+        snap = tmp_path / "hub" / EMBED_MODEL_REPO_ID / "snapshots" / "abc"
+        snap.mkdir(parents=True)
+        (snap / "config.json").write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(vectorization, "_candidate_model_roots", lambda: [tmp_path])
+        lines: list[str] = []
+        assert vectorization.download_model(progress=lines.append) == snap
+        assert any("跳过下载" in line for line in lines)

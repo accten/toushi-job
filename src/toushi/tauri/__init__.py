@@ -453,6 +453,90 @@ async def set_letter_prompt(body: _LetterPromptBody) -> dict[str, str]:
     return {"status": "saved"}
 
 
+# ---------- 嵌入模型（首次使用按需下载，安装包不再内置） ----------
+
+
+@commands.command()
+async def get_embed_model_status() -> dict[str, object]:
+    """模型在不在本地。运行页挂载时问一次，缺了就显示下载引导。
+
+    体积之所以不随安装包走：模型约 420MB，占了 pyembed 的四分之一还多，而
+    它只在第一次生成招呼语时用得上。让用户装完再按需下，安装包能小一大截，
+    也省得每轮 CI 都重新下 420MB。
+    """
+    from toushi.vectorization import (
+        EMBED_MODEL_APPROX_MB,
+        find_model_snapshot,
+        model_download_dir,
+    )
+
+    snapshot = find_model_snapshot()
+    return {
+        "present": snapshot is not None,
+        "path": str(snapshot) if snapshot else "",
+        "dir": str(model_download_dir()),
+        "approxMb": EMBED_MODEL_APPROX_MB,
+    }
+
+
+class _DownloadModelBody(_CamelModel):
+    log_channel: JavaScriptChannelId[str]
+
+
+@commands.command()
+async def download_embed_model(
+    body: _DownloadModelBody, webview_window: WebviewWindow
+) -> dict[str, object]:
+    """下载嵌入模型（约 420MB）。下完 find_model_snapshot() 立刻能找到，不用重启。
+
+    两处讲究：
+    - 下载是阻塞 IO，丢到线程里跑，否则会把 portal loop 卡住、UI 整个僵死；
+    - 工作线程**不直接发 Channel**（Channel 只能在 portal 线程上发），只把消息
+      和进度百分比写进普通 list，本协程每秒轮询一次再转发。
+    """
+    import asyncio
+
+    from toushi.vectorization import download_model, find_model_snapshot
+
+    channel = body.log_channel.channel_on(webview_window.as_ref_webview())
+    loop = asyncio.get_running_loop()
+
+    messages: list[str] = []
+    percent_slot: list[str] = [""]
+
+    def worker() -> str:
+        return str(download_model(progress=messages.append, percent_slot=percent_slot))
+
+    task = loop.run_in_executor(None, worker)
+    last_bucket = -1
+    while not task.done():
+        while messages:
+            _safe_send(channel, messages.pop(0))
+        pct = percent_slot[0] if percent_slot else ""
+        if pct.isdigit():
+            bucket = int(pct) // 10
+            if bucket != last_bucket:
+                last_bucket = bucket
+                _safe_send(channel, f"[模型] 下载中… {pct}%")
+        await asyncio.sleep(1.0)
+
+    while messages:
+        _safe_send(channel, messages.pop(0))
+
+    try:
+        path = await task
+    except Exception as e:  # noqa: BLE001 - 统一转成前端看得懂的一句话
+        _safe_send(channel, f"[模型] 下载失败：{type(e).__name__}: {e}")
+        raise
+
+    snapshot = find_model_snapshot()
+    _safe_send(channel, f"[模型] 已就绪：{path}")
+    return {
+        "status": "ok",
+        "path": str(snapshot) if snapshot else path,
+    }
+
+
 # ---------- 简历（Run 页拖拽上传） ----------
 
 

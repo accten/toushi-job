@@ -2667,6 +2667,7 @@ source = { editable = "." }
 dependencies = [
     { name = "chromadb" },
     { name = "flask" },
+    { name = "huggingface-hub" },
     { name = "nodriver" },
     { name = "openai" },
     { name = "packaging" },
@@ -2698,6 +2699,7 @@ requires-dist = [
     { name = "anyio", marker = "extra == 'standalone'", specifier = ">=4.0" },
     { name = "chromadb", specifier = ">=0.6.3" },
     { name = "flask", specifier = ">=3.0.0" },
+    { name = "huggingface-hub", specifier = ">=0.30" },
     { name = "nodriver", specifier = ">=0.48.1" },
     { name = "openai", specifier = ">=1.70.0" },
     { name = "packaging", specifier = ">=24.2" },

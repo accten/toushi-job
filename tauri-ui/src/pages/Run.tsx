@@ -9,6 +9,7 @@ import {
   FileText,
   Flag,
   Globe,
+  HardDriveDownload,
   LogIn,
   Play,
   RotateCcw,
@@ -23,9 +24,9 @@ import {
 } from "lucide-react";
 import { Channel } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { ipc, type ProgressEvent, type RunConfig, type ResumeInfo, type LlmConfig, type Platform } from "../lib/ipc";
+import { ipc, type ProgressEvent, type RunConfig, type ResumeInfo, type LlmConfig, type Platform, type EmbedModelStatus } from "../lib/ipc";
 import { useRunStore, useT } from "../store";
-import { Badge, EmptyState, Field, Panel } from "../components/ui";
+import { Badge, EmptyState, Field, Panel, ProgressBar } from "../components/ui";
 
 // 运行页布局：
 //   上：运行参数 / 简历（两栏）  →  动作条  →  出错卡片  →  实时（事件时间线 + 日志终端）
@@ -50,6 +51,11 @@ export default function RunPage() {
   const [logPaths, setLogPaths] = useState<{ dir: string } | null>(null);
   // 日志自动滚动：默认开；用户往上翻看历史时"永远滚到底"很烦，给个开关
   const [autoScroll, setAutoScroll] = useState(true);
+
+  // 嵌入模型：安装包不再内置（省掉约 420MB），首次使用按需下载。
+  // 挂在运行页而不是启动弹窗，是因为它就是"点开始之前该做的事"。
+  const [model, setModel] = useState<EmbedModelStatus | null>(null);
+  const [modelBusy, setModelBusy] = useState(false);
 
   // Global form states
   const usrName = useRunStore((s) => s.formUsrName);
@@ -109,6 +115,13 @@ export default function RunPage() {
   useEffect(() => {
     ipc.getResume()
       .then(({ resume }) => setResumeInfo(resume))
+      .catch(() => {});
+  }, []);
+
+  // 挂载时查一次嵌入模型在不在（前端不读文件系统，只能问后端）
+  useEffect(() => {
+    ipc.getEmbedModelStatus()
+      .then(setModel)
       .catch(() => {});
   }, []);
 
@@ -228,6 +241,12 @@ export default function RunPage() {
       setStartError(t("run.errNeedResume"));
       return;
     }
+
+    // 嵌入模型没下就别开始：跑到第一个岗位才抛，用户得从日志里翻原因
+    if (model && !model.present) {
+      setStartError(t("err.needEmbedModel"));
+      return;
+    }
     setBusy(true);
     clear();
     setRunning(true);
@@ -278,6 +297,26 @@ export default function RunPage() {
       pushLog(t("run.loginFailed", { err: String(e) }));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // 下载嵌入模型：进度走日志通道（后端在线程里下，主线程每秒转发一次百分比）
+  async function handleDownloadModel() {
+    setModelBusy(true);
+    setStartError(null);
+    const logChannel = new Channel<string>((line) => pushLog(line));
+    try {
+      const r = await ipc.downloadEmbedModel(logChannel);
+      setModel((prev) => ({
+        present: true,
+        path: r.path,
+        dir: prev?.dir ?? "",
+        approxMb: prev?.approxMb ?? 0,
+      }));
+    } catch (e) {
+      pushLog(t("run.modelDownloadFailed", { err: String(e) }));
+    } finally {
+      setModelBusy(false);
     }
   }
 
@@ -509,6 +548,41 @@ export default function RunPage() {
           </div>
         </Panel>
       </div>
+
+      {/* ===== 嵌入模型：没下就引导下载（安装包不带模型，省约 420MB） ===== */}
+      {model && !model.present && (
+        <section className="card border-[var(--ink)] fade-up flex-shrink-0">
+          <div className="card-body flex items-start gap-4 flex-wrap">
+            <HardDriveDownload
+              size={22}
+              strokeWidth={1.5}
+              aria-hidden
+              className="mt-0.5 flex-shrink-0"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold">{t("run.modelMissingTitle")}</p>
+              <p className="field-hint mt-1 leading-relaxed">
+                {t("run.modelMissingDesc", { mb: model.approxMb })}
+              </p>
+              {model.dir && (
+                <p className="field-hint mt-1 break-all">
+                  {t("run.modelDir", { dir: model.dir })}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleDownloadModel}
+              disabled={modelBusy}
+              className="btn flex-shrink-0"
+            >
+              <HardDriveDownload size={15} strokeWidth={2.25} aria-hidden />
+              {modelBusy ? t("run.modelDownloading") : t("run.modelDownload")}
+            </button>
+          </div>
+          {modelBusy && <ProgressBar active />}
+        </section>
+      )}
 
       {/* ===== 动作条 ===== */}
       <section className="card flex-shrink-0">

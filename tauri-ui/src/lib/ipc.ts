@@ -73,6 +73,14 @@ export type LetterRecord = {
   letter: string;
 };
 
+// 嵌入模型状态。安装包不再内置模型（约 420MB），首次使用时按需下载到 dir。
+export type EmbedModelStatus = {
+  present: boolean;
+  path: string;
+  dir: string;
+  approxMb: number;
+};
+
 export type TelemetrySummary = {
   total_calls: number;
   total_cost_cny: number;
@@ -102,6 +110,11 @@ export const ipc = {
     pyInvoke<{ status: string; profile: string; url: string }>("open_login_window", {
       platform,
     }),
+  // 嵌入模型：查是否已下载 / 触发下载（进度通过 logChannel 推到日志面板）
+  getEmbedModelStatus: () =>
+    pyInvoke<EmbedModelStatus>("get_embed_model_status", {}),
+  downloadEmbedModel: (logChannel: unknown) =>
+    pyInvoke<{ status: string; path: string }>("download_embed_model", { logChannel }),
   getEnvFields: () => pyInvoke<{ fields: EnvField[] }>("get_env_fields", {}),
   writeEnvFields: (updates: Record<string, string>) =>
     pyInvoke<{ status: string }>("write_env_fields", { updates }),

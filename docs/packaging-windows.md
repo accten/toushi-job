@@ -1,247 +1,202 @@
 # 打包成 Windows exe 安装程序
 
-这篇只讲一件事：**把「投石」变成一个能双击安装的 Windows 安装包**。
-macOS 那条线（.app / .dmg）脚本是同构的，差异处会单独标注。
+这篇讲怎么把「投石」变成一个能双击安装的 Windows 安装包，以及**踩过的坑**。
+里面的数字都是 CI 上真跑出来的，不是估的。
 
 ---
 
 ## TL;DR
 
-| 你想干什么 | 怎么做 | 前置 |
+| 你想干什么 | 怎么做 | 产物 |
 |---|---|---|
-| **出可发布的安装包**（推荐） | push 一个 v* tag，GitHub Actions 自动出 NSIS + MSI + DMG 草稿 release | 什么都不用装 |
-| 本机自己打一个 | pwsh -File scripts/build_standalone.ps1 | Rust + VS Build Tools（本机目前没装） |
-| 只要个能跑的 exe，不要安装器 | 同上，但产物取 target/bundle-release/toushi.exe | 同上；注意它**离不开同目录的 python313.dll** |
+| **出可发布的安装包**（推荐） | push 一个 v* tag，GitHub Actions 自动构建 | 草稿 release 里挂 NSIS 安装器 + macOS dmg |
+| 本机自己打 | pwsh -File scripts/build_standalone.ps1 | 需要 Rust + VS Build Tools |
+| 只要个能跑的 exe | 不推荐，见下 | 缺 DLL 必然起不来 |
 
-**但在动手之前**：先看第三节的两个 blocker。照现在这样直接打，装出来的 App 会在「上传简历后第一次生成招呼语」时崩掉。
-
----
-
-## 一、已经有的家当
-
-打包这条流水线仓库里已经有了，不用从零开始：
-
-| 文件 | 作用 |
-|---|---|
-| scripts/build_standalone.ps1 | Windows 全流程：拉嵌入式 Python → 装业务包 → 编前端 → tauri build → 产物自检 |
-| scripts/build_standalone.sh | macOS 同构版本（多了 libpython 的 install_name 修补） |
-| src-tauri/tauri.bundle.json | 用 --config 叠加到 tauri.conf.json，把 pyembed/python 作为 resources 打进包 |
-| .github/workflows/release.yml | 打 tag 后在 windows-latest + macos-latest 上各跑一次上面的脚本，产物进**草稿** release |
-| scripts/set_version.py | 把 tag 的版本号灌进 pyproject / Cargo.toml / tauri.conf.json / Tauri.toml 四处 |
-
-**原理**（一句话）：把 python-build-standalone 的嵌入式解释器 + 你的业务包一起放进安装目录，
-Rust 二进制启动时用 PythonInterpreterBuilder 把它拉起来，再执行 toushi.tauri 模块。
-用户机器上**不需要装 Python**，也不需要装 Node。
+**用户机器上不需要装 Python，也不需要装 Node。** 嵌入式解释器 + 你的包一起进安装目录，
+Rust 二进制启动时把它拉起来，再执行 toushi.tauri 模块。
 
 ---
 
-## 二、三条路线
-
-### A. 交给 GitHub Actions（推荐）
-
-仓库里 release.yml 已经写好了，你只需要打 tag：
+## 一、出包流程
 
     git tag v0.7.0
     git push origin v0.7.0
 
-约 15 分钟后 Actions 里会出现一个 **draft release**，挂三个产物：
+约 25-40 分钟后 Actions 里出现一个 **draft release**，挂着：
 
-- Toushi_0.7.0_x64-setup.exe   ← NSIS 安装器，这就是你要的
-- Toushi_0.7.0_x64_en-US.msi   ← WiX/MSI
-- Toushi_0.7.0_aarch64.dmg     ← macOS
+- Toushi_0.7.0_x64-setup.exe（NSIS 安装器，约 450MB）
+- Toushi_0.7.0_aarch64.dmg（macOS）
 
-看完安装界面、确认版本号，再点 Publish。**草稿是刻意的**：CI 不直接发布，防止错版本产物跑出去。
+**草稿是刻意的**：CI 不直接发布，防止错版本产物跑出去。看一眼再点 Publish。
 
-注意事项：
+⚠️ 重跑同一个 tag 要先删掉本地 tag 再重建（远端已存在时 push 需要 --force）：
 
-- tag 必须是 v 开头，set_version.py 从它取版本号；仓库里 committed 的版本号只是本地占位。
-- 免费额度：公开仓库的 Actions 分钟数不计费；私有仓库 Windows runner 消耗 2x 分钟。
-- 第一次跑要下 torch 等大轮子，慢（30-50 分钟）；release.yml 里给 uv 和 cargo 都配了 cache，第二次会快很多。
+    git tag -d v0.7.0 && git tag -a v0.7.0 -m 'Toushi v0.7.0'
+    git push --force origin v0.7.0
 
-### B. 本机自己打
+### 相关文件
 
-前置（按顺序装）：
-
-1. **Rust**：https://rustup.rs → rustup default stable（需要 >= 1.78，脚本会检查，低了直接 fail-fast）
-2. **Visual Studio Build Tools**，勾 "Desktop development with C++"（要 MSVC 链接器；只装 VS Code 不算）
-3. **pnpm**：npm i -g pnpm（现在这台机器上跑的是 DSH 自带的临时 pnpm，不建议依赖它）
-4. WebView2 Runtime：Win11 自带；Win10 需要装 Evergreen Runtime（安装器会自动带上）
-
-然后：
-
-    pwsh -ExecutionPolicy Bypass -File scripts/build_standalone.ps1
-
-想强制重建嵌入式 Python：先设环境变量 BOSS_PYEMBED_REBUILD=1 再跑。
-
-**当前这台机器缺 cargo / rustc**，所以这条路线现在跑不了。
-
-### C. 只要 raw exe
-
-不推荐单独分发 toushi.exe：python313.dll、Lib/、models/ 都靠安装目录的相对位置找，
-拷一个 exe 出去必然起不来。要"绿色版"得把整个 bundle-release 目录打包成 zip，
-而且路径里不能有空格（见第九节）。
-
----
-
-## 三、开工前必须修的两个 blocker
-
-### Blocker 1：嵌入模型路径在 wheel 里会失效
-
-src/toushi/vectorization.py 现在是这么定位模型的：
-
-    _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-    _DEFAULT_HF_HOME = _PROJECT_ROOT / "models"
-    EMBED_MODEL_NAME = str(_LOCAL_MODEL_SNAPSHOT)
-    embedder = SentenceTransformer(EMBED_MODEL_NAME, local_files_only=True)
-
-在仓库里 src/toushi/vectorization.py 往上两级正好是仓库根目录 —— 本地能跑。
-但**装成 wheel 之后**它在 Lib/site-packages/toushi/vectorization.py，
-parents[2] 变成 Lib/，模型路径指向一个不存在的地方；
-local_files_only=True 又不允许联网兜底，于是直接抛异常。
-表现就是：**App 能开、能填表，一点「开始」生成招呼语就崩**。
-
-建议改法（最小改动）：
-
-1. 模型目录按优先级解析：BOSS_MODEL_DIR 环境变量 → 应用数据目录下 models/ → 仓库根 models/。
-   前两者覆盖"装完之后"，最后一个保住本地开发。
-2. local_files_only 保持 True（离线优先，也避免用户机器上偷偷下几百 MB），
-   但**找不到时给一句人话报错**，而不是让 OSError 冒到日志里。
-3. 安装器把模型作为 resource 拷进应用目录。
-
-### Blocker 2：模型没被打进安装包
-
-src-tauri/tauri.bundle.json 现在只声明了嵌入式 Python，**没有 models/**：
-
-    { "bundle": { "active": true, "targets": "all",
-      "resources": { "pyembed/python": "./" } } }
-
-要么按下面这样加进去，要么走第四节说的瘦身方案（换 ONNX，模型缩到约 80 MB）。
-加的话建议只加**去重后的快照目录**，别整个 models/hub 拷进去：
-
-    "resources": {
-      "pyembed/python": "./",
-      "models/hub/models--sentence-transformers--all-mpnet-base-v2/snapshots": "./models/"
-    }
-
-（Windows 上 HuggingFace 缓存是**复制**不是硬链接，所以 models/ 目录的 837 MB 里
-有 418 MB 是重复的：blobs 一份、snapshots 一份。真正要打进去的是 418 MB。）
-
----
-
-## 四、体积账
-
-现在直接打的话：
-
-| 部分 | 体积 |
+| 文件 | 作用 |
 |---|---|
-| torch 2.12.1（PyPI 的 Windows 轮子是 **CPU-only**，不是 2.5 GB 的 CUDA 版） | 468 MB |
-| transformers / tokenizers / scipy / chromadb / onnxruntime 等 | 约 550 MB |
-| all-mpnet-base-v2 模型（safetensors） | 418 MB |
-| **合计（解压后）** | **约 1.4 GB** |
-| **NSIS 安装包（LZMA 压缩后）** | **约 400–550 MB** |
+| scripts/build_standalone.ps1 | Windows 全流程：拉嵌入式 Python → 装业务包 → 编前端 → tauri build → 自检 |
+| scripts/build_standalone.sh | macOS 同构版本（多一步 libpython 的 install_name 修补） |
+| src-tauri/tauri.bundle.json | 用 --config 叠加到 tauri.conf.json，把 pyembed/python 作为 resources 打进包 |
+| .github/workflows/release.yml | 打 tag 后在 windows-latest + macos-latest 各跑一次，产物进草稿 release |
+| scripts/set_version.py | 把 tag 的版本号灌进 pyproject / Cargo.toml / tauri.conf.json / Tauri.toml |
+| scripts/set_app_icon.py | 铺开应用图标（PNG / ico / icns） |
 
-能接受，但不优雅。**想砍到 200 MB 左右**，唯一的大头是换掉嵌入后端：
+---
 
-| 方案 | 省下 | 代价 |
+## 二、体积账（实测）
+
+| 部分 | Windows | macOS |
 |---|---|---|
-| 用 Chroma 自带的 ONNX 默认嵌入（all-MiniLM-L6-v2，约 80 MB，onnxruntime 本来就在依赖里） | torch 468 MB + 模型 340 MB + transformers 链约 150 MB ≈ **950 MB** | 向量质量略降；**已有的 vectorstores/ 必须重建**（维度/空间都变了） |
-| 保留 mpnet，但只打 safetensors | 0（已经是这样） | — |
-| 保留现状 | — | 安装包 400–550 MB |
+| pyembed/python（解释器 + 所有依赖） | 1352 MB | 1526 MB |
+| 模型（**不进包**，用户首次使用时下） | — | — |
+| tauri-ui/node_modules（不进包，只是诊断打印） | 121 MB | 138 MB |
+| **NSIS 安装器（压缩后）** | **约 450 MB** | dmg 类似量级 |
 
-我的建议：**先按现状出一版能装的**，把流程打通；瘦身作为独立的一步来做
-（换后端要连带处理 COLLECTION_NAME 版本号 + 老向量库迁移，不该和"第一次打包"混在一起）。
-
----
-
-## 五、图标（已接好）
-
-- 母版：assets/app-icons/*.svg（9 个候选）+ preview.png 对照表
-- 生成器：uv run python scripts/set_app_icon.py 05-target
-  一次写出 16 个 PNG + 多尺寸 icon.ico（16/24/32/48/64/128/256）+ icon.icns，
-  同时落**两处**：src-tauri/icons/（standalone 用）和 src/toushi/tauri/icons/（wheel dev 用）。
-- 配置：src-tauri/tauri.conf.json 与 src/toushi/tauri/Tauri.toml 的 bundle.icon 都指向各自那份；
-  pyproject.toml 的 package-data 已把 icons/* 打进 wheel。
-
-安装器里的图标、开始菜单图标、任务栏图标、窗口左上角图标，全部来自这几个文件，改图标只重跑脚本。
+大头是 torch（约 470MB）和 transformers 那条链。想再砍一半，唯一的路是换成
+**Chroma 自带的 ONNX 嵌入**（all-MiniLM-L6-v2，约 80MB，onnxruntime 本来就在依赖里），
+能省掉 torch + transformers + 大部分模型体积，约 950MB。代价是向量质量略降，
+并且已有的 vectorstores/ 必须重建（维度变了）。**没做**，先记在这里。
 
 ---
 
-## 六、NSIS 还是 MSI
+## 三、模型不再随包分发
 
-tauri.conf.json 里 "targets": "all"，Windows 上两份都出：
+模型（all-mpnet-base-v2，约 418MB）**不打包**，改由 App 首次使用时下载：
 
-| | NSIS（*-setup.exe） | MSI（.msi） |
+- 后端：toushi/vectorization.py 的 download_model()，下到应用数据目录
+  （%APPDATA%/com.longsizhuo.toushi/models），走 huggingface_hub.snapshot_download，
+  固定 revision，只拉推理要的文件（config / tokenizer / model.safetensors）。
+- 前端：运行页挂载时问一次 get_embed_model_status，缺了就显示引导卡片 +
+  「下载模型」按钮；没下完不让点「开始」。
+- 重装 / 升级不会丢：模型在应用数据目录，不在安装目录。
+
+换来三个好处：安装包少 400MB 左右；CI 每轮少下 420MB；模型版本不再被钉死在安装包里，
+以后换模型不用重新发版。
+
+**注意**：打包脚本现在会主动**删掉** pyembed/models（老版本打进过安装包，留着白白多
+418MB）。别"顺手优化"回去。
+
+---
+
+## 四、打包时必须知道的几个坑
+
+这些都是真踩过、脚本里已经处理了的，改脚本时别改回去。
+
+### 4.1 WiX / MSI 扛不住这个体积
+
+    Error failed to bundle project: failed to run WixTools314\light.exe
+
+targets = "all" 会在 Windows 上同时出 NSIS 和 MSI，而 MSI 的 cabinet 处理不了 GB 级
+payload，light.exe 直接失败 —— **整个 tauri build 就算挂了**（NSIS 明明已经产出来了）。
+所以两个平台各自显式指定：Windows 用 --bundles nsis，macOS 用 --bundles dmg。
+个人用户双击 -setup.exe 就够了，MSI 是给企业 GPO 批量部署用的。
+
+### 4.2 pnpm-lock 必须跟 package.json 同步
+
+    ERR_PNPM_OUTDATED_LOCKFILE
+      * 1 dependencies were added: lucide-react@^1.55.0
+
+仓库里同时有 package-lock.json（npm）和 pnpm-lock.yaml（pnpm）。**本地用 npm 构建、
+CI 用 pnpm --frozen-lockfile** —— 只更新 npm 那份，CI 就挂。改了 package.json 之后：
+
+    cd tauri-ui && npx -y pnpm@10 install --lockfile-only
+
+用 pnpm **10** 而不是更新的版本，跟 release.yml 里 pnpm/action-setup 的 version 对齐
+（lockfileVersion 会不一样）。
+
+### 4.3 tauri v2 打完 dmg 会清掉 .app
+
+脚本原来的自检是 find *.app，CI 上必然失败（日志里能看到 "Cleaning .../Toushi.app"）。
+现在改成**挂载 dmg，对用户真正拿到的那份做自检**：otool 链接检查 + codesign +
+entitlements 都在挂载出来的 .app 上做，做完再 detach。
+
+### 4.4 PowerShell 5.1 会把中文 .ps1 读成 ANSI
+
+scripts/build_standalone.ps1 里有中文，没有 BOM 的话 Windows PowerShell 5.1
+（powershell.exe，不是 pwsh 7）**直接解析失败** —— 不是乱码那么简单。
+文件带 UTF-8 BOM，别去掉。
+
+### 4.5 其他（脚本已处理）
+
+| 坑 | 现象 | 处理 |
 |---|---|---|
-| 适合 | 个人用户直接双击 | 企业批量部署 / GPO |
-| 装到哪 | 默认 %LOCALAPPDATA%/Toushi（用户级，不需要管理员） | 可指定 Program Files |
-| 卸载 | 控制面板里有 | 同 |
-| 体积 | 略小 | 略大 |
+| 没设 PYO3_PYTHON | pyo3 链到系统 Python，装完 LoadLibrary 失败 | 脚本显式指向 pyembed 的 python.exe |
+| 没设 RUSTFLAGS=-L native=libs 目录 | 链接期找不到 python313.lib | 脚本设置；前提是仓库路径没有空格 |
+| pyembed 里的 BUILD 标记文件 | 大小写不敏感撞上 cargo 的 build 目录 → os error 5 | 脚本删掉（运行时不读它） |
+| uv pip install 被 PEP 668 拦 | externally managed environment | 加 --break-system-packages |
+| 缓存里的旧安装包 | CI 上传 glob 匹配到上个版本的产物 | build 前先 rm -rf bundle-release/bundle |
 
-**给个人用户发就用 NSIS 那个 -setup.exe。** 想只出一种，把 bundle.targets 从 "all" 改成 ["nsis"]，
-能顺带省掉 WiX 的下载和编译时间（CI 每次要拉 WiX 工具集）。
+### 4.6 CI 上怎么看到失败原因
 
----
+**公开仓库的 job log 走 API 拉需要 admin 权限**，拿不到任何输出，只能看到一个 exit code 1。
+所以：
 
-## 七、签名与 SmartScreen
+- release.yml 的 build step 外面套了一层 bash，失败时把日志尾部 8 行吐成
+  ::error:: annotation，并额外上传完整日志为 artifact；
+- 两个构建脚本会把各部分的体积发成 ::notice:: annotation。
 
-不签名的话，用户第一次运行会看到：
-**「Windows 已保护你的电脑」→ 更多信息 → 仍要运行**。功能正常，只是观感差。
-
-- **代码签名证书**：OV 证书（约 1000-2000 元/年）能去掉大部分警告；
-  EV 证书（更贵、要硬件 token）才有"立即建立信誉"的效果。个人项目通常不值得。
-- **不签也能发**：在 README / release notes 里把"点更多信息→仍要运行"写清楚，
-  比让用户自己猜好得多。
-- 如果以后要签，tauri.conf.json 的 bundle.windows.certificateThumbprint +
-  digestAlgorithm 填上，证书放 CI secret 里。
+annotation 不需要 admin，是目前唯一能远程读到的东西。加这个之前，三轮 CI 全靠猜。
 
 ---
 
-## 八、发布前验收清单
+## 五、CI 上的 Linux 检查（跟打包无关，但会被它带红）
 
-按这个顺序走一遍，每步都能独立发现问题：
+.github/workflows/ci.yml 的 smoke import 跑在 Ubuntu 上，需要两个额外条件：
 
-1. **安装**：双击 -setup.exe，装完能在开始菜单找到「投石 · Toushi」，图标是新的
-2. **启动**：不装 Python、不装 Node 的干净机器上双击能起（这是嵌入式 Python 是否生效的唯一验证）
+1. **WebKitGTK**：main.py → toushi.tauri → pytauri-wheel 的原生扩展链到
+   libwebkit2gtk-4.1，headless runner 上没有 → 加了一步 apt 装
+   libwebkit2gtk-4.1-dev / libgtk-3-dev / librsvg2-dev。
+2. **pnpm-lock 同步**：见 4.2。
+
+---
+
+## 六、签名与 SmartScreen
+
+不签名的话，用户第一次运行会看到「Windows 已保护你的电脑」→ 更多信息 → 仍要运行。
+功能正常，只是观感差。
+
+- OV 证书（约 1000-2000 元/年）能去掉大部分警告；EV 才有"立即建立信誉"的效果。
+- 不签也能发：在 README / release notes 里把"点更多信息→仍要运行"写清楚就够了。
+- 要签：tauri.conf.json 的 bundle.windows.certificateThumbprint + digestAlgorithm，
+  证书放 CI secret。
+
+---
+
+## 七、发布前验收清单
+
+1. **安装**：双击 -setup.exe，开始菜单里有「投石 · Toushi」，图标是新的
+2. **启动**：在**没装过 Python 的干净机器**上双击能起（嵌入式 Python 是否生效的唯一验证）
 3. **图标**：任务栏 + 窗口左上角是同一张
-4. **配置页**：填 API key → 保存 → 重开 App 还在（验证 .env 落在应用数据目录）
-5. **上传简历**：拖 PDF 进去 → 显示文件名（这一步还不需要模型）
-6. **点开始（Dry Run 开）**：能走到"生成招呼语" —— **这一步才真正验证嵌入模型和 LLM 都通了**
-7. **检查加载的 DLL**：Process Explorer 里看 python313.dll 的路径是不是安装目录下那份
-   （拿错版本是这套方案最经典的翻车方式）
-8. **卸载**：控制面板卸载后，%LOCALAPPDATA%/Toushi 里的用户数据保留与否，符合你的预期
+4. **下载模型**：运行页出现引导卡片 → 点下载 → 日志面板能看到进度 → 卡片消失
+5. **配置页**：填 API key → 保存 → 重开 App 还在
+6. **上传简历**：拖 PDF 进去 → 显示文件名
+7. **点开始（Dry Run 开）**：能走到"生成招呼语" —— 这一步才真正验证模型和 LLM 都通了
+8. **检查加载的 DLL**：Process Explorer 里看 python313.dll 的路径是不是安装目录下那份
+9. **卸载**：控制面板卸载后，%APPDATA%/com.longsizhuo.toushi 里的模型和配置是否保留，符合预期
 
 ---
 
-## 九、已知坑（脚本里已经处理，别改回去）
+## 八、本机构建要装什么
 
-| 坑 | 现象 | 现有处理 |
-|---|---|---|
-| 没设 PYO3_PYTHON | pyo3 去链系统 Python，装完 LoadLibrary 失败 | 脚本显式指向 pyembed 的 python.exe |
-| 没设 RUSTFLAGS=-L native=&lt;libs&gt; | 链接期找不到 python313.lib | 脚本设置；**前提是仓库路径没有空格**（RUSTFLAGS 按空格切） |
-| pyembed 里的 BUILD 标记文件 | Windows 大小写不敏感，撞上 cargo 的 build 目录 → os error 5 拒绝访问 | 脚本删掉它（Python 运行时不读这个文件） |
-| uv pip install 被 PEP 668 拦 | "externally managed environment" | 加 --break-system-packages |
-| tauri CLI 找不到 src-tauri/ | 从 tauri-ui/ 跑会找不到配置 | 脚本从仓库根目录调 tauri-ui/node_modules/.bin/tauri |
-| 缓存里的旧安装包 | CI 上传 glob 匹配到上个版本的产物 | release.yml build 前先 rm -rf bundle-release/bundle |
+1. **Rust**：https://rustup.rs → rustup default stable（需要 >= 1.78，脚本会检查）
+2. **Visual Studio Build Tools**，勾 "Desktop development with C++"（要 MSVC 链接器）
+3. **pnpm**：npm i -g pnpm
+4. WebView2 Runtime：Win11 自带；Win10 需要 Evergreen Runtime
 
-还有一个**没处理**的：脚本里这句
-
-    uv pip install --exact --compile-bytecode --break-system-packages "$RepoRoot[standalone]"
-
-是**绕开 uv.lock 现场解析依赖**的。也就是说本地 uv sync 装的版本和安装包里装的版本
-可能不是同一套（torch / transformers 这类大包升级时尤其明显）。
-想锁死，可以改成从 lockfile 导出的 requirements：
-
-    uv export --frozen --no-dev --no-emit-project --extra standalone -o requirements-standalone.txt
-    uv pip install --exact --break-system-packages --python &lt;pyembed&gt; -r requirements-standalone.txt
-
-要不要现在就改，取决于你多介意"本地能跑、装出来跑不了"这类问题。第一次打包建议先按原样跑通。
+然后 pwsh -ExecutionPolicy Bypass -File scripts/build_standalone.ps1。
+强制重建嵌入式 Python：先设 BOSS_PYEMBED_REBUILD=1。
 
 ---
 
-## 十、建议顺序
+## 九、还没做的
 
-1. 先修 Blocker 1 的模型路径（**必须先修，不然装出来是废的**）
-2. 模型加进 bundle.resources
-3. 打 tag 走一遍 CI，拿到 -setup.exe
-4. 在**另一台没装过 Python 的机器**上按第八节验收
-5. 流程通了之后，再单独开一个 PR 做 ONNX 瘦身 + 签名
+- **ONNX 嵌入瘦身**（见第二节，约 950MB）
+- **代码签名**
+- **让 uv pip install 走 uv.lock**：现在是绕开 lockfile 现场解析依赖的，本地 uv sync
+  装的版本和安装包里装的可能不是同一套。想锁死可以 uv export 出
+  requirements-standalone.txt 再 uv pip install -r。

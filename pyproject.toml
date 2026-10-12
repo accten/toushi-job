@@ -15,6 +15,10 @@ dependencies = [
     "pypdf>=5.4.0",
     "chromadb>=0.6.3",
     "sentence-transformers>=3.0.0",
+    # 嵌入模型不再随安装包走，改成首次使用时下到应用数据目录（vectorization.download_model）。
+    # sentence-transformers 本来就依赖它，这里显式写出来是因为我们直接 import 它 ——
+    # 只靠传递依赖的话，上游哪天换实现我们就炸。
+    "huggingface-hub>=0.30",
     "nodriver>=0.48.1",
     "flask>=3.0.0",
 ]

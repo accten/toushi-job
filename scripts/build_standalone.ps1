@@ -118,52 +118,18 @@ if (Test-Path -PathType Leaf $BuildMarker) {
     Remove-Item -Force $BuildMarker
 }
 
-# ---------- 3.6 把嵌入模型拷进 resources ----------
-# 装出来的 App 要能在完全离线的机器上向量化简历，模型必须随包走。
-# 放在 pyembed 旁边（src-tauri\pyembed\models），跟 pyembed\python 一样由
-# tauri.bundle.json 的 resources 映射到安装目录 —— 安装后是 <安装目录>\models，
-# 正好落在 vectorization._candidate_model_roots() 的候选里。
+# ---------- 3.6 嵌入模型：**不打进安装包** ----------
+# 模型约 418MB，占了 pyembed 的四分之一，而它只在第一次生成招呼语时用得上。
+# 现在改成装完首次使用时由 App 自己下（toushi/vectorization.py 的 download_model，
+# 落到应用数据目录，重装/升级不丢）—— 安装包小一大截，CI 也不用每轮重下 420MB。
 #
-# 只拷 snapshots 那一层：Windows 上 HuggingFace 缓存是复制不是硬链接，
-# models\ 里 blobs 和 snapshots 各占一份（837MB），真正要的只有 418MB 那份。
-# 模型有三种来路，按优先级：
-#   1. pyembed\models 已经有了（上次跑过）→ 跳过
-#   2. 仓库里有 models\hub\...（本地开发机）→ 拷去重后的快照目录
-#   3. 都没有（CI / 新克隆）→ 直接从 HuggingFace 拉一份平铺在 pyembed\models
-#      （418MB，CI 上跑几分钟；本地开发机一般是走 2，不会重下）
-$ModelRepo = 'sentence-transformers/all-mpnet-base-v2'
-$ModelRevision = 'e8c3b32edf5434bc2275fc9bab85f82640a19130'
+# 别"顺手优化"回打包内置：那样 NSIS 会涨回 600MB+，而且模型版本会被钉死在
+# 安装包里，换模型要重新发版。
+# （见 docs/packaging-windows.md「模型不再随包分发」一节。）
 $ModelDst = Join-Path $PyembedDir 'models'
-if (Test-Path (Join-Path $ModelDst 'config.json')) {
-    Write-Host "==> 嵌入模型已在 pyembed\models，跳过"
-} elseif (Test-Path (Join-Path $RepoRoot 'models\hub')) {
-    $Snapshot = Get-ChildItem -Path (Join-Path $RepoRoot 'models\hub') -Recurse -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -eq 'snapshots' } |
-        ForEach-Object { Get-ChildItem $_.FullName -Directory } |
-        Where-Object { Test-Path (Join-Path $_.FullName 'config.json') } |
-        Select-Object -First 1
-    if (-not $Snapshot) {
-        throw "仓库里有 models\hub 但找不到完整快照（缺 config.json）—— 见 docs/packaging-windows.md"
-    }
-    $RepoId = $Snapshot.Parent.Parent.Name
-    $Target = Join-Path $ModelDst (Join-Path 'hub' (Join-Path $RepoId (Join-Path 'snapshots' $Snapshot.Name)))
-    Write-Host "==> 拷贝嵌入模型：$($Snapshot.FullName) -> $Target"
-    New-Item -ItemType Directory -Path $Target -Force | Out-Null
-    Copy-Item -Path (Join-Path $Snapshot.FullName '*') -Destination $Target -Recurse -Force
-} else {
-    Write-Host "==> 仓库里没有 models\，从 HuggingFace 拉一份到 pyembed\models（约 418MB）"
-    New-Item -ItemType Directory -Path $ModelDst -Force | Out-Null
-    # 用 uv 的临时环境跑 hf CLI：不在项目依赖里塞 huggingface_hub（它只在打包期用）。
-    # --include 只拉推理要的那几个文件：不加的话 HF 仓库里的 pytorch_model.bin /
-    # onnx/ 变体也会一起下来，白白多几百 MB。
-    uv run --no-project --with huggingface_hub hf download $ModelRepo `
-        --revision $ModelRevision `
-        --include '*.json' --include '*.txt' --include 'model.safetensors' `
-        --local-dir $ModelDst
-    if ($LASTEXITCODE -ne 0) { throw "嵌入模型下载失败（exit $LASTEXITCODE）—— 见 docs/packaging-windows.md" }
-    if (-not (Test-Path (Join-Path $ModelDst 'config.json'))) {
-        throw "模型下载完了但 $ModelDst 里没有 config.json，打包会出个没模型的安装包"
-    }
+if (Test-Path $ModelDst) {
+    Write-Host "==> 清掉 pyembed\models（旧版本打进过安装包，留着会白白多 418MB）"
+    Remove-Item -Recurse -Force $ModelDst
 }
 
 # ---------- 4. Rust 链接参数 ----------

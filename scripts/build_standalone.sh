@@ -109,49 +109,16 @@ if [[ -f "$build_marker" ]]; then
 fi
 
 # ---------- 3.6 把嵌入模型拷进 resources ----------
-# 装出来的 App 要在完全离线的机器上向量化简历，模型必须随包走。
-# 放在 pyembed 旁边（src-tauri/pyembed/models），由 tauri.bundle.json 的
-# resources 映射到安装目录 —— 安装后是 <安装目录>/models，正好落在
-# vectorization._candidate_model_roots() 的候选里。
+# 模型约 418MB，占了 pyembed 的四分之一，而它只在第一次生成招呼语时用得上。
+# 现在改成装完首次使用时由 App 自己下（toushi/vectorization.py 的 download_model，
+# 落到应用数据目录，重装/升级不丢）—— 安装包小一大截，CI 也不用每轮重下 420MB。
 #
-# 只拷 snapshots 那一层：HF 缓存里 blobs 和 snapshots 各占一份（837MB），
-# 真正要的只有约 418MB 那份。
-# 模型有三种来路，按优先级：
-#   1. pyembed/models 已经有了（上次跑过）→ 跳过
-#   2. 仓库里有 models/hub/...（本地开发机）→ 拷去重后的快照目录
-#   3. 都没有（CI / 新克隆）→ 直接从 HuggingFace 拉一份平铺在 pyembed/models
-MODEL_REPO='sentence-transformers/all-mpnet-base-v2'
-MODEL_REVISION='e8c3b32edf5434bc2275fc9bab85f82640a19130'
+# 别"顺手优化"回打包内置：那样 dmg 会涨回 2GB+，而且模型版本被钉死在安装包里。
+# （见 docs/packaging-windows.md「模型不再随包分发」一节。）
 MODEL_DST="$PYEMBED_DIR/models"
-if [[ -f "$MODEL_DST/config.json" ]]; then
-    echo "==> 嵌入模型已在 pyembed/models，跳过"
-elif [[ -d "$REPO_ROOT/models/hub" ]]; then
-    SNAPSHOT=$(find "$REPO_ROOT/models/hub" -maxdepth 3 -type d -name snapshots 2>/dev/null \
-        | while read -r d; do find "$d" -mindepth 1 -maxdepth 1 -type d; done \
-        | while read -r s; do if [[ -f "$s/config.json" ]]; then echo "$s"; fi; done \
-        | head -n 1)
-    if [[ -z "$SNAPSHOT" ]]; then
-        echo "仓库里有 models/hub 但找不到完整快照（缺 config.json）—— 见 docs/packaging-windows.md" >&2
-        exit 1
-    fi
-    REPO_ID=$(basename "$(dirname "$(dirname "$SNAPSHOT")")")
-    TARGET="$MODEL_DST/hub/$REPO_ID/snapshots/$(basename "$SNAPSHOT")"
-    echo "==> 拷贝嵌入模型：$SNAPSHOT -> $TARGET"
-    mkdir -p "$TARGET"
-    cp -R "$SNAPSHOT/." "$TARGET/"
-else
-    echo "==> 仓库里没有 models/，从 HuggingFace 拉一份到 pyembed/models（约 418MB）"
-    mkdir -p "$MODEL_DST"
-    # --include 只拉推理要的文件：不加的话 HF 仓库里的 pytorch_model.bin /
-    # onnx/ 变体也会一起下来，白白多几百 MB。
-    uv run --no-project --with huggingface_hub hf download "$MODEL_REPO" \
-        --revision "$MODEL_REVISION" \
-        --include '*.json' --include '*.txt' --include 'model.safetensors' \
-        --local-dir "$MODEL_DST"
-    if [[ ! -f "$MODEL_DST/config.json" ]]; then
-        echo "模型下载完了但 $MODEL_DST 里没有 config.json，打包会出个没模型的安装包" >&2
-        exit 1
-    fi
+if [[ -d "$MODEL_DST" ]]; then
+    echo "==> 清掉 pyembed/models（旧版本打进过安装包，留着白白多 418MB）"
+    rm -rf "$MODEL_DST"
 fi
 
 # ---------- 4. Rust 链接参数 ----------
@@ -193,8 +160,22 @@ done
     -- --profile bundle-release
 
 # ---------- 6. 产物自检 ----------
-APP=$(find "$REPO_ROOT/src-tauri/target" -maxdepth 4 -name "*.app" -path "*bundle-release*" | head -1)
-[[ -n "$APP" ]] || { echo "❌ 没找到 .app 产物"; exit 1; }
+# ⚠️ 不能直接 find .app：tauri v2 打完 dmg 会把中间的 .app 清掉
+# （CI 上实际看到 "Cleaning .../Toushi.app"），老写法在这里必挂。
+# 改成挂载 dmg，对**用户真正拿到的那份**做自检 —— 比检查中间产物更有意义。
+DMG=$(find "$REPO_ROOT/src-tauri/target/bundle-release/bundle/dmg" -name "*.dmg" 2>/dev/null | head -1)
+[[ -n "$DMG" ]] || { echo "❌ 没找到 .dmg 产物"; exit 1; }
+echo "==> dmg: $DMG（$(du -sm "$DMG" | cut -f1) MB）"
+
+MOUNT_POINT=$(mktemp -d)
+hdiutil attach "$DMG" -mountpoint "$MOUNT_POINT" -nobrowse -quiet
+APP=$(find "$MOUNT_POINT" -maxdepth 2 -name "*.app" | head -1)
+[[ -n "$APP" ]] || {
+    echo "❌ dmg 里没找到 .app（挂载点 $MOUNT_POINT）"
+    ls -la "$MOUNT_POINT" || true
+    hdiutil detach "$MOUNT_POINT" -quiet || true
+    exit 1
+}
 BIN="$APP/Contents/MacOS/toushi"
 echo "==> 自检：binary 应链接 @rpath/libpython3.x，不能出现 Python3.framework"
 if otool -L "$BIN" | grep -q "Python3.framework"; then
@@ -244,4 +225,7 @@ if ! codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "disable-library-
 fi
 echo "  ✓ disable-library-validation 已注入"
 
-echo "✅ 构建完成：$APP"
+hdiutil detach "$MOUNT_POINT" -quiet || true
+rmdir "$MOUNT_POINT" 2>/dev/null || true
+
+echo "✅ 构建完成：$DMG"

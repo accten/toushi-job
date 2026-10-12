@@ -11,10 +11,13 @@
 加载已有向量库      → 重新向量化 → 保存
 """
 
+from __future__ import annotations
+
 import hashlib
 import os
 import sys
 from pathlib import Path
+from typing import Callable, Optional
 
 from toushi.paths import app_data_dir
 
@@ -148,6 +151,117 @@ def _get_embedder() -> SentenceTransformer:
         _embedder = SentenceTransformer(str(snapshot), local_files_only=True)
         _embedder_path = str(snapshot)
     return _embedder
+
+
+
+
+# ---------- 模型下载（首次安装后按需拉取） ----------
+#
+# 安装包不再内置模型（418MB，占整个包的三分之一还多），改成用户点一下再下。
+# 下到 model_download_dir()，也就是 _candidate_model_roots() 的候选之一，
+# 所以下完 find_model_snapshot() 立刻就能找到，不需要重启。
+
+# HuggingFace 上的仓库 id（注意不是本地缓存目录名，那个带 models-- 前缀）
+EMBED_MODEL_HF_REPO = "sentence-transformers/all-mpnet-base-v2"
+# 固定 revision，保证每个人装到的权重完全一致（也顺便是一个稳定的下载地址）
+EMBED_MODEL_REVISION = "e8c3b32edf5434bc2275fc9bab85f82640a19130"
+# 只拉推理要的文件。不加过滤会把 pytorch_model.bin / onnx / tf 变体一起拖下来，
+# 体积能翻两三倍——这条跟打包脚本里的 --include 是同一个理由。
+EMBED_MODEL_ALLOW_PATTERNS = ["*.json", "*.txt", "model.safetensors"]
+# 给 UI 显示的预估体积（实测约 418MB，取整）
+EMBED_MODEL_APPROX_MB = 420
+
+
+def model_download_dir() -> Path:
+    """模型下载到哪：BOSS_MODEL_DIR 优先，否则应用数据目录下的 models/。
+
+    必须是 _candidate_model_roots() 里的候选，否则下完了还是找不到。
+    """
+    override = os.environ.get(MODEL_DIR_ENV, "").strip()
+    if override:
+        return Path(override)
+    return app_data_dir() / "models"
+
+
+def is_model_available() -> bool:
+    """模型在不在本地。GUI 用它决定要不要弹下载引导。"""
+    return find_model_snapshot() is not None
+
+
+def _make_progress_tqdm(slot: "list[str]") -> type:
+    """造一个 tqdm 子类：每步把百分比写进 slot[0]，供 portal 线程轮询。
+
+    为什么用这种土办法：snapshot_download 跑在**工作线程**里，而推送日志的
+    Channel 只能在 portal 线程上发。所以工作线程不直接发消息，只更新一个普通
+    list 槽位，主线程每秒读一次再发 —— 线程安全，也不用加锁（单写单读 + 只存字符串）。
+    """
+    from tqdm.auto import tqdm as _tqdm
+
+    class _ProgressTqdm(_tqdm):
+        def update(self, n=1):  # type: ignore[override]
+            result = super().update(n)
+            total = float(self.total or 0)
+            if total > 0:
+                slot[0] = str(int(self.n * 100 / total))
+            return result
+
+    return _ProgressTqdm
+
+
+def download_model(
+    progress: "Callable[[str], None] | None" = None,
+    percent_slot: Optional[list] = None,
+) -> Path:
+    """把嵌入模型下到 model_download_dir()，返回快照目录。
+
+    progress 收一行人类可读的进度文本（GUI 日志面板用），可以传 None。
+    percent_slot 是个单元素 list，下载过程中会被写入当前百分比字符串；
+    调用方（GUI）轮询它来显示进度 —— 因为回调跑在工作线程里，不能直接发 Channel。
+    幂等：已经有了就直接返回，不重复下载。
+    """
+
+    def say(msg: str) -> None:
+        if progress is None:
+            return
+        try:
+            progress(msg)
+        except Exception:  # noqa: BLE001 - 日志失败不能拖垮下载
+            pass
+
+    existing = find_model_snapshot()
+    if existing is not None:
+        say("[模型] 本地已有，跳过下载：" + str(existing))
+        return existing
+
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as e:  # pragma: no cover - 依赖缺失属于装坏了
+        raise RuntimeError("缺少 huggingface_hub，无法下载嵌入模型") from e
+
+    target = model_download_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    say(f"[模型] 开始下载 {EMBED_MODEL_HF_REPO}（约 {EMBED_MODEL_APPROX_MB}MB）")
+    say(f"[模型] 目标目录：{target}")
+
+    slot = percent_slot if percent_slot is not None else [""]
+    if slot:
+        slot[0] = ""
+    snapshot_download(
+        repo_id=EMBED_MODEL_HF_REPO,
+        revision=EMBED_MODEL_REVISION,
+        local_dir=str(target),
+        allow_patterns=EMBED_MODEL_ALLOW_PATTERNS,
+        tqdm_class=_make_progress_tqdm(slot),
+        max_workers=4,
+    )
+
+    found = find_model_snapshot()
+    if found is None:
+        raise RuntimeError(
+            "模型下载完了，但在 " + str(target) + " 里找不到 config.json（可能被中断了，重试一次）"
+        )
+    say("[模型] 下载完成：" + str(found))
+    return found
 
 
 def text_hash(text: str) -> str:
