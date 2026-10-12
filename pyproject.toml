@@ -1,6 +1,6 @@
 [project]
 name = "toushi"
-version = "0.6.0"
+version = "0.7.0"
 description = "投石 · 用 LLM 判断岗位与简历是否匹配，只给配得上的岗位打招呼/投递（BOSS 直聘 + 智联招聘）。"
 readme = "README.md"
 requires-python = ">=3.11"
