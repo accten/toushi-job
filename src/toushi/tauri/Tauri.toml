@@ -17,6 +17,18 @@ identifier = "com.longsizhuo.toushi"
 # tauri-ui/vite.config.ts 的 build.outDir 必须构建到同一个目录。
 frontendDist = "./frontend"
 
+# 窗口图标 / 关于面板图标。路径相对本文件（包内 icons/），
+# 由 scripts/set_app_icon.py 一并生成；改图标只用重跑那个脚本。
+# standalone 那份配置（src-tauri/tauri.conf.json）指向 src-tauri/icons/，两边内容一致。
+[bundle]
+icon = [
+    "icons/32x32.png",
+    "icons/128x128.png",
+    "icons/128x128@2x.png",
+    "icons/icon.icns",
+    "icons/icon.ico",
+]
+
 [app]
 withGlobalTauri = true
 

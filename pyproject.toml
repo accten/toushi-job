@@ -53,6 +53,9 @@ where = ["src"]
     "Tauri.toml",
     "capabilities/*.toml",
     "frontend/**",
+    "icons/*.png",
+    "icons/*.ico",
+    "icons/*.icns",
 ]
 
 [tool.pytest.ini_options]
