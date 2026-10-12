@@ -1,16 +1,40 @@
 import { useEffect, useState } from "react";
+import { Bot, Languages, MessageSquareQuote, SlidersHorizontal, User } from "lucide-react";
 import { ipc, type EnvField, type LlmConfig } from "../lib/ipc";
 import { useRunStore, useT } from "../store";
 import { LANGS, type Lang } from "../lib/i18n";
+import { Badge, EmptyState, KeyTag, Panel } from "../components/ui";
 
-// 配置页：.env 编辑
-// monochrome 设计：editorial 表单 —— 每个字段 key 用反色 mono 标签
+// 配置页：.env 编辑。
 //
-// 顶部「AI 端点」段：通用 OpenAI 兼容端点 = Base URL + Key + Model。
-// 一个可选的「常用快捷」下拉自动填 base_url + model（默认「自定义」），
-// 支持任意端点——DeepSeek/OpenAI/Claude/百炼/GLM/豆包/Kimi/本地 Ollama…
-// 都是同一条路，列表只是糖，不是限制。下面是其余通用字段。
+// 布局分四段：工具栏（保存）→ AI 端点 → 按用途分组的变量 → 招呼语 prompt。
+// 「AI 端点」单独拎出来是因为它三件套（base_url / key / model）要走预设选择器，
+// 不渲染成通用裸框；其余变量按用途分组，比一长条平铺好找。
 const CUSTOM = ""; // 下拉里「自定义」的值
+
+// 变量分组。key 不在这里出现的一律落到「其它变量」，所以新增后端字段不会漏渲染。
+const GROUPS: { id: string; icon: React.ReactNode; keys: string[] }[] = [
+  {
+    id: "you",
+    icon: <User size={14} strokeWidth={2.25} aria-hidden />,
+    keys: ["BOSS_USR_NAME", "BOSS_LABEL"],
+  },
+  {
+    id: "filter",
+    icon: <SlidersHorizontal size={14} strokeWidth={2.25} aria-hidden />,
+    keys: ["BOSS_MIN_MATCH_SCORE", "BOSS_MIN_KEYWORD_MATCH", "BOSS_EXCLUDE_KEYWORDS"],
+  },
+  {
+    id: "browser",
+    icon: <SlidersHorizontal size={14} strokeWidth={2.25} aria-hidden />,
+    keys: [
+      "BOSS_CHROME_PROFILE",
+      "ZHILIAN_CHROME_PROFILE",
+      "BOSS_RECOMMEND_URL",
+      "ZHILIAN_RECOMMEND_URL",
+    ],
+  },
+];
 
 export default function ConfigPage() {
   const t = useT();
@@ -149,74 +173,63 @@ export default function ConfigPage() {
     setLetterPrompt(v);
   }
 
+  // 按分组把 fields 切好；没匹配上任何分组的进「其它变量」
+  const grouped = GROUPS.map((g) => ({
+    ...g,
+    fields: g.keys
+      .map((k) => fields.find((f) => f.key === k))
+      .filter((f): f is EnvField => Boolean(f)),
+  }));
+  const claimed = new Set(GROUPS.flatMap((g) => g.keys));
+  const others = fields.filter((f) => !claimed.has(f.key));
+
   return (
-    <div className="space-y-10">
-      {/* === 标题段 === */}
-      <section className="flex items-end justify-between gap-6 pb-4 border-b-2 border-[var(--ink)]">
-        <div>
-          <h2 className="font-serif text-5xl leading-none tracking-tight">
-            {t("config.title")}
-          </h2>
-          <p className="mono-tag mt-3">
-            {t("config.editPrefix")} <span className="text-[var(--ink)]">.env</span> {t("config.editSuffix")}
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          {saved && !dirty && <span className="badge-invert">{t("config.saved")}</span>}
-          {dirty && <span className="badge-outline italic">{t("config.unsaved")}</span>}
-          <button onClick={save} disabled={!dirty || saving} className="btn">
-            {saving ? t("btn.saving") : t("btn.save")}
-          </button>
+    <div className="h-full overflow-y-auto p-5">
+      <div className="space-y-5">
+      {/* ===== 工具栏：保存 / 状态 ===== */}
+      <section className="card">
+        <div className="card-body flex items-center gap-3 flex-wrap">
+          <p className="field-hint max-w-xl">{t("config.groupHint")}</p>
+          <div className="ml-auto flex items-center gap-3">
+            {saved && !dirty && <Badge variant="invert">{t("config.saved")}</Badge>}
+            {dirty && <Badge variant="outline">{t("config.unsaved")}</Badge>}
+            <button onClick={save} disabled={!dirty || saving} className="btn">
+              {saving ? t("btn.saving") : t("btn.save")}
+            </button>
+          </div>
         </div>
       </section>
 
-      {/* === 错误带 === */}
+      {/* ===== 错误带 ===== */}
       {error && (
-        <div className="border-2 border-[var(--ink)] p-4 flex items-start gap-3">
-          <span className="badge-invert flex-shrink-0">ERROR</span>
-          <pre className="text-sm font-mono whitespace-pre-wrap flex-1">{error}</pre>
+        <div className="card border-[var(--ink)] fade-in">
+          <div className="card-body flex items-start gap-3">
+            <Badge variant="invert">ERROR</Badge>
+            <pre className="text-[12px] font-mono whitespace-pre-wrap flex-1 m-0">{error}</pre>
+          </div>
         </div>
       )}
 
-      {/* === 界面语言 === 标签刻意双语，切错语言也能找回；不走 dirty/保存流程，选即生效 */}
-      <section className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-center">
-        <label className="field-label">{t("config.language")}</label>
-        <select
-          value={lang}
-          onChange={(e) => changeLang(e.target.value as Lang)}
-          className="field-input font-mono"
-        >
-          {LANGS.map((l) => (
-            <option key={l.value} value={l.value}>
-              {l.label}
-            </option>
-          ))}
-        </select>
-      </section>
-
       {loading ? (
-        <div className="font-mono text-sm text-[var(--muted-fg)] italic">{t("common.loading")}</div>
+        <div className="card">
+          <EmptyState title={t("common.loading")} />
+        </div>
       ) : (
         <>
-          {/* === AI 端点：base_url + key + model === */}
+          {/* ===== AI 端点 ===== */}
           {llmCfg && (
-            <section className="space-y-5">
-              <div>
-                <label className="field-label">{t("config.endpoint")}</label>
-                <p className="mt-1 text-sm font-mono text-[var(--muted-fg)] italic">
-                  {t("config.endpointHint")}
-                </p>
-              </div>
-
+            <Panel
+              title={t("config.endpoint")}
+              icon={<Bot size={14} strokeWidth={2.25} aria-hidden />}
+              actions={<span className="field-hint">{t("config.endpointHint")}</span>}
+              bodyClassName="card-body space-y-4"
+            >
               {/* 常用快捷：默认「自定义」，选了自动填 base_url + model */}
-              <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-center">
-                <div className="font-mono text-sm uppercase tracking-widest text-[var(--muted-fg)]">
-                  {t("config.preset")}
-                </div>
+              <Row label={t("config.preset")}>
                 <select
                   value={preset}
                   onChange={(e) => pickPreset(e.target.value)}
-                  className="field-input font-mono"
+                  className="field-input"
                 >
                   <option value={CUSTOM}>{t("config.custom")}</option>
                   {llmCfg.presets.map((p) => (
@@ -225,58 +238,43 @@ export default function ConfigPage() {
                     </option>
                   ))}
                 </select>
-              </div>
+              </Row>
 
-              {/* Base URL */}
-              <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-start">
-                <div className="font-mono text-sm uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1 self-start">
-                  LLM_BASE_URL
-                </div>
+              <Row label="LLM_BASE_URL">
                 <input
                   type="text"
                   value={baseUrl}
                   onChange={(e) => editBaseUrl(e.target.value)}
-                  className="field-input font-mono"
+                  className="field-input font-mono text-[13px]"
                   placeholder={t("config.baseUrlPlaceholder")}
                 />
-              </div>
+              </Row>
 
-              {/* Model */}
-              <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-start">
-                <div className="font-mono text-sm uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1 self-start">
-                  LLM_MODEL
-                </div>
+              <Row label="LLM_MODEL">
                 <input
                   type="text"
                   value={model}
                   onChange={(e) => editModel(e.target.value)}
-                  className="field-input font-mono"
+                  className="field-input font-mono text-[13px]"
                   placeholder={t("config.modelPlaceholder")}
                 />
-              </div>
+              </Row>
 
-              {/* API Key */}
-              <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-start">
-                <div>
-                  <div className="font-mono text-sm uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1">
-                    LLM_API_KEY
-                  </div>
-                  <p className="mt-2 text-[13px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
-                    {t("config.secret")}
-                  </p>
-                  {selectedPreset && (
-                    <p className="mt-2 text-sm font-serif leading-snug text-[var(--muted-fg)] break-all">
-                      {t("config.signup", { url: selectedPreset.signupUrl })}
-                    </p>
-                  )}
-                </div>
+              <Row
+                label="LLM_API_KEY"
+                note={
+                  selectedPreset
+                    ? t("config.signup", { url: selectedPreset.signupUrl })
+                    : undefined
+                }
+              >
                 <div>
                   <div className="flex items-center gap-2">
                     <input
                       type={showKey ? "text" : "password"}
                       value={keyEdit ?? ""}
                       onChange={(e) => editKey(e.target.value)}
-                      className="field-input font-mono flex-1"
+                      className="field-input font-mono text-[13px] flex-1"
                       placeholder={
                         llmCfg.hasKey
                           ? t("config.keyConfiguredPlaceholder")
@@ -286,7 +284,7 @@ export default function ConfigPage() {
                     <button
                       type="button"
                       onClick={() => setShowKey((v) => !v)}
-                      className="btn-ghost text-sm flex-shrink-0"
+                      className="btn-ghost text-[12px] flex-shrink-0"
                       aria-label={showKey ? t("config.hideKeyAria") : t("config.showKeyAria")}
                     >
                       {showKey ? t("btn.hide") : t("btn.show")}
@@ -294,58 +292,89 @@ export default function ConfigPage() {
                   </div>
                   {/* 选了预设但还没配 key：提示去填，别等点开始才发现没 key */}
                   {selectedPreset && !llmCfg.hasKey && !keyEdit && (
-                    <p className="mt-2 text-sm font-mono text-[var(--muted-fg)] italic">
+                    <p className="field-hint mt-1.5">
                       {t("config.presetKeyHint", { label: selectedPreset.label })}
                     </p>
                   )}
                 </div>
-              </div>
-            </section>
+              </Row>
+            </Panel>
           )}
 
-          {/* === 其余通用字段 === */}
-          <section className="divide-y divide-[var(--border-light)] border-t-2 border-[var(--ink)] pt-2">
-            {fields.map((f) => (
-              <div key={f.key} className="py-6 grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-start">
-                <div>
-                  <div className="font-mono text-sm uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] inline-block px-2 py-1">
-                    {f.key}
-                  </div>
-                  <p className="mt-2 text-sm font-serif leading-snug text-[var(--ink)]">
-                    {t(`field.${f.key}`)}
-                  </p>
-                  {f.isSecret && (
-                    <p className="mt-1 text-[13px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
-                      {t("config.secret")}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <input
-                    type={f.isSecret ? "password" : "text"}
-                    value={valueFor(f.key, f.value)}
-                    onChange={(e) => setField(f.key, e.target.value)}
-                    className="field-input font-mono"
-                    placeholder={f.isSecret ? t("config.secretSetPlaceholder") : ""}
-                  />
-                </div>
-              </div>
+          {/* ===== 按用途分组的通用变量 ===== */}
+          <div className="grid gap-5 lg:grid-cols-2 items-start">
+            {grouped.map((g) => (
+              <Panel key={g.id} title={t("config.group." + g.id)} icon={g.icon} bodyClassName="p-0">
+                {g.fields.length === 0 ? (
+                  <EmptyState title="—" />
+                ) : (
+                  g.fields.map((f) => (
+                    <EnvRow
+                      key={f.key}
+                      field={f}
+                      value={valueFor(f.key, f.value)}
+                      onChange={(v) => setField(f.key, v)}
+                      t={t}
+                    />
+                  ))
+                )}
+              </Panel>
             ))}
-          </section>
 
-          {/* === 招呼语 Prompt（自定义生成指令，留空用内置默认）=== */}
-          <section className="space-y-3 border-t-2 border-[var(--ink)] pt-6">
-            <div>
-              <label className="field-label">{t("config.letterPrompt")}</label>
-              <p className="mt-1 text-sm font-mono text-[var(--muted-fg)] italic">
-                {t("config.letterPromptHint")}
-              </p>
-            </div>
+            {/* 其它变量：后端新加的字段没归类时落这里，不会漏 */}
+            <Panel
+              title={t("config.group.other")}
+              icon={<SlidersHorizontal size={14} strokeWidth={2.25} aria-hidden />}
+              bodyClassName="p-0"
+            >
+              {others.length === 0 ? (
+                <EmptyState title="—" />
+              ) : (
+                others.map((f) => (
+                  <EnvRow
+                    key={f.key}
+                    field={f}
+                    value={valueFor(f.key, f.value)}
+                    onChange={(v) => setField(f.key, v)}
+                    t={t}
+                  />
+                ))
+              )}
+            </Panel>
+
+            {/* 界面语言：标签刻意双语，切错语言也能找回；选即生效，不走保存流程 */}
+            <Panel
+              title={t("config.language")}
+              icon={<Languages size={14} strokeWidth={2.25} aria-hidden />}
+              bodyClassName="card-body"
+            >
+              <select
+                value={lang}
+                onChange={(e) => changeLang(e.target.value as Lang)}
+                className="field-input"
+              >
+                {LANGS.map((l) => (
+                  <option key={l.value} value={l.value}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+              <p className="field-hint mt-3">{t("config.liveNote")}</p>
+            </Panel>
+          </div>
+
+          {/* ===== 招呼语 Prompt ===== */}
+          <Panel
+            title={t("config.letterPrompt")}
+            icon={<MessageSquareQuote size={14} strokeWidth={2.25} aria-hidden />}
+            bodyClassName="card-body space-y-3"
+          >
+            <p className="field-hint">{t("config.letterPromptHint")}</p>
             <textarea
               value={letterPrompt}
               onChange={(e) => editPrompt(e.target.value)}
               rows={8}
-              className="field-input font-mono text-sm leading-relaxed"
+              className="field-input text-[12px] leading-relaxed"
               placeholder={letterPromptDefault || t("config.letterPromptPlaceholder")}
             />
             <div className="flex items-center gap-3">
@@ -353,26 +382,71 @@ export default function ConfigPage() {
                 type="button"
                 onClick={() => editPrompt("")}
                 disabled={letterPrompt === ""}
-                className="btn-ghost text-sm"
+                className="btn-ghost text-[12px]"
               >
                 {t("btn.resetDefault")}
               </button>
               {letterPrompt === "" && (
-                <span className="text-[13px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
-                  {t("config.letterPromptPlaceholder")}
-                </span>
+                <span className="field-hint">{t("config.letterPromptPlaceholder")}</span>
               )}
             </div>
-          </section>
+          </Panel>
         </>
       )}
+      </div>
+    </div>
+  );
+}
 
-      {/* === 说明 === */}
-      <section className="border-t-4 border-[var(--ink)] pt-6">
-        <p className="text-sm font-serif italic text-[var(--muted-fg)] leading-relaxed max-w-2xl">
-          {t("config.liveNote")}
-        </p>
-      </section>
+/** AI 端点那几个字段的行：左边标签固定宽，右边控件。
+ * 标签要么是文案（预设），要么是变量名（显示成 chip）。 */
+function Row({
+  label,
+  note,
+  children,
+}: {
+  label: string;
+  note?: string;
+  children: React.ReactNode;
+}) {
+  const isEnvKey = label.includes("_");
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-2 md:gap-6 md:items-start">
+      <div className="md:pt-1.5">
+        {isEnvKey ? <KeyTag>{label}</KeyTag> : <span className="field-label mb-0">{label}</span>}
+        {note && <p className="field-hint mt-1.5 break-words">{note}</p>}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+/** 分组面板里的一行环境变量。 */
+function EnvRow({
+  field,
+  value,
+  onChange,
+  t,
+}: {
+  field: EnvField;
+  value: string;
+  onChange: (v: string) => void;
+  t: (k: string, v?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div className="px-5 py-4 border-b border-[var(--border-light)] last:border-b-0">
+      <div className="flex items-baseline gap-2 flex-wrap mb-1">
+        <span className="text-[13px] font-medium">{t("field." + field.key)}</span>
+        <KeyTag>{field.key}</KeyTag>
+        {field.isSecret && <Badge variant="muted">{t("config.secret")}</Badge>}
+      </div>
+      <input
+        type={field.isSecret ? "password" : "text"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="field-input font-mono text-[12px]"
+        placeholder={field.isSecret ? t("config.secretSetPlaceholder") : ""}
+      />
     </div>
   );
 }

@@ -1,18 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronRight, Coins, Inbox, RefreshCw, Search } from "lucide-react";
 import { ipc, type LetterRecord, type TelemetrySummary } from "../lib/ipc";
 import { useT } from "../store";
+import { Badge, EmptyState, Panel, Segmented } from "../components/ui";
 
-// 历史页：editorial 表格
-// monochrome 设计：
-// - 表头 uppercase mono，底部 4px 黑线
-// - 行 hover 反色
-// - 校验/发送状态用 mono 符号 + 反色徽章，不用红绿色
-// - 成本汇总用大号 serif 数字 + uppercase 小标签
+// 历史页：先概览（成本 / 条数），再明细（可过滤、可搜索、点行展开 JD）。
+// 状态表达仍然延续 monochrome：徽章 + 符号，不用红绿。
+type Filter = "all" | "sent" | "dry" | "failed";
+
 export default function HistoryPage() {
   const [letters, setLetters] = useState<LetterRecord[]>([]);
   const [summary, setSummary] = useState<TelemetrySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [query, setQuery] = useState("");
   const t = useT();
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export default function HistoryPage() {
         ipc.getLetters(200),
         ipc.getTelemetrySummary(),
       ]);
-      setLetters(letters.reverse()); // 最新的在最上
+      setLetters(letters.slice().reverse()); // 最新的在最上
       setSummary(summary);
     } catch (e) {
       setError(String(e));
@@ -36,124 +38,163 @@ export default function HistoryPage() {
     }
   }
 
+  const counts = useMemo(
+    () => ({
+      all: letters.length,
+      sent: letters.filter((l) => l.sent).length,
+      dry: letters.filter((l) => !l.sent && l.dry_run).length,
+      failed: letters.filter((l) => !l.validation_ok).length,
+    }),
+    [letters],
+  );
+
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return letters.filter((l) => {
+      if (filter === "sent" && !l.sent) return false;
+      if (filter === "dry" && !(!l.sent && l.dry_run)) return false;
+      if (filter === "failed" && l.validation_ok) return false;
+      if (q && !(l.letter + " " + l.job_description).toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [letters, filter, query]);
+
   return (
-    <div className="space-y-10">
-      {/* === 标题段 === */}
-      <section className="flex items-end justify-between gap-6 pb-4 border-b-2 border-[var(--ink)]">
-        <div>
-          <h2 className="font-serif text-5xl leading-none tracking-tight">
-            {t("history.title")}
-          </h2>
-          <p className="mono-tag mt-3">
-            {t("history.subtitle")}
-          </p>
+    <div className="h-full overflow-y-auto p-5">
+      <div className="space-y-5">
+      {/* ===== 工具栏 ===== */}
+      <section className="card">
+        <div className="card-body flex items-center gap-3 flex-wrap">
+          <span className="field-hint">{t("history.expandHint")}</span>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="field-hint tabular-nums">{t("history.rows", { n: shown.length })}</span>
+            <button onClick={refresh} disabled={loading} className="btn-outline">
+              <RefreshCw size={14} strokeWidth={2.25} aria-hidden />
+              {t("btn.refresh")}
+            </button>
+          </div>
         </div>
-        <button
-          onClick={refresh}
-          disabled={loading}
-          className="btn-outline"
-        >
-          {loading ? "..." : t("btn.refresh")}
-        </button>
       </section>
 
-      {/* === 错误带 === */}
+      {/* ===== 错误带 ===== */}
       {error && (
-        <div className="border-2 border-[var(--ink)] p-4 flex items-start gap-3">
-          <span className="badge-invert flex-shrink-0">ERROR</span>
-          <pre className="text-sm font-mono whitespace-pre-wrap flex-1">
-            {error}
-          </pre>
+        <div className="card border-[var(--ink)] fade-in">
+          <div className="card-body flex items-start gap-3">
+            <Badge variant="invert">ERROR</Badge>
+            <pre className="text-[12px] font-mono whitespace-pre-wrap flex-1 m-0">{error}</pre>
+          </div>
         </div>
       )}
 
-      {/* === 成本汇总 === */}
-      {summary && <CostSummary summary={summary} />}
+      {/* ===== 成本汇总 ===== */}
+      {summary && (
+        <Panel
+          title={t("history.costHeading")}
+          icon={<Coins size={14} strokeWidth={2.25} aria-hidden />}
+          bodyClassName="card-body"
+        >
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-x-8 gap-y-6">
+            <Stat label={t("history.statLetters")} value={String(counts.all)} emphasis />
+            <Stat label={t("history.statTotalCalls")} value={String(summary.total_calls)} emphasis />
+            <Stat
+              label={t("history.statTotalCost")}
+              value={summary.total_cost_cny.toFixed(4)}
+              emphasis
+            />
+            {Object.entries(summary.by_provider).map(([provider, s]) => (
+              <Stat
+                key={provider}
+                label={t("history.statProviderCalls", { provider, calls: s.calls })}
+                value={"¥ " + s.cost_cny.toFixed(4)}
+                sub={"in " + s.input_tokens + " · out " + s.output_tokens}
+              />
+            ))}
+          </div>
+        </Panel>
+      )}
 
-      {/* === 招呼语表格 === */}
-      <section>
-        <h3 className="mono-tag mb-3 text-[var(--ink)]">
-          {t("history.lettersHeading")}
-        </h3>
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="border-b-4 border-[var(--ink)]">
-              <Th>{t("history.thTime")}</Th>
-              <Th>Provider</Th>
-              <Th>Model</Th>
-              <Th align="center">{t("history.thValidation")}</Th>
-              <Th align="center">{t("history.thSent")}</Th>
-              <Th>{t("history.thLetter")}</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {letters.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="px-3 py-12 text-center font-serif italic text-[var(--muted-fg)]"
-                >
-                  {loading ? t("common.loading") : t("history.empty")}
-                </td>
+      {/* ===== 招呼语明细 ===== */}
+      <Panel
+        title={t("history.lettersHeading")}
+        icon={<Inbox size={14} strokeWidth={2.25} aria-hidden />}
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search
+                size={13}
+                strokeWidth={2}
+                aria-hidden
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--muted-fg)]"
+              />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("history.searchPlaceholder")}
+                className="w-52 bg-transparent border border-[var(--border-light)] pl-7 pr-2 py-1 text-[12px] outline-none focus:border-[var(--border)]"
+              />
+            </div>
+            <Segmented<Filter>
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: "all", label: t("history.filterAll"), count: counts.all },
+                { value: "sent", label: t("history.filterSent"), count: counts.sent },
+                { value: "dry", label: t("history.filterDry"), count: counts.dry },
+                { value: "failed", label: t("history.filterFailed"), count: counts.failed },
+              ]}
+            />
+          </div>
+        }
+        bodyClassName="p-0"
+      >
+        {shown.length === 0 ? (
+          <EmptyState
+            icon={<Inbox size={22} strokeWidth={1.5} aria-hidden />}
+            title={loading ? t("common.loading") : letters.length === 0 ? t("history.empty") : t("history.noMatch")}
+          />
+        ) : (
+          <table className="w-full text-[13px] border-collapse">
+            <thead>
+              <tr className="border-b border-[var(--border)]">
+                <Th>{t("history.thTime")}</Th>
+                <Th>Provider</Th>
+                <Th>Model</Th>
+                <Th align="center">{t("history.thValidation")}</Th>
+                <Th align="center">{t("history.thSent")}</Th>
+                <Th>{t("history.thLetter")}</Th>
+                <Th align="center"> </Th>
               </tr>
-            ) : (
-              letters.map((l, i) => <LetterRow key={i} l={l} />)
-            )}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody>
+              {shown.map((l, i) => (
+                <LetterRow key={l.ts + "-" + i} l={l} />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
+      </div>
     </div>
   );
 }
 
-function Th({
-  children,
-  align = "left",
-}: {
-  children: React.ReactNode;
-  align?: "left" | "center";
-}) {
+/** 后端可能给 "none" / 空串（智联记录没走 LLM），统一显示成占位符。 */
+function dashIfEmpty(v: string | null | undefined): string {
+  if (!v || v === "none") return "—";
+  return v;
+}
+
+function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "center" }) {
   return (
     <th
       className={[
-        "px-3 py-3 font-mono text-[13px] uppercase tracking-widest text-[var(--ink)]",
+        "px-4 py-2.5 font-normal text-[11px] uppercase tracking-wider text-[var(--muted-fg)] bg-[var(--paper-2)]",
         align === "center" ? "text-center" : "text-left",
       ].join(" ")}
     >
       {children}
     </th>
-  );
-}
-
-function CostSummary({ summary }: { summary: TelemetrySummary }) {
-  const t = useT();
-  const providers = Object.entries(summary.by_provider);
-  return (
-    <section className="border-2 border-[var(--ink)] p-6">
-      <h3 className="mono-tag mb-5 text-[var(--ink)]">
-        {t("history.costHeading")}
-      </h3>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-6">
-        <Stat
-          label={t("history.statTotalCalls")}
-          value={summary.total_calls.toString()}
-          emphasis
-        />
-        <Stat
-          label={t("history.statTotalCost")}
-          value={summary.total_cost_cny.toFixed(4)}
-          emphasis
-        />
-        {providers.map(([provider, s]) => (
-          <Stat
-            key={provider}
-            label={t("history.statProviderCalls", { provider, calls: s.calls })}
-            value={`¥ ${s.cost_cny.toFixed(4)}`}
-            sub={`in: ${s.input_tokens}  out: ${s.output_tokens}`}
-          />
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -168,18 +209,14 @@ function Stat({
   sub?: string;
   emphasis?: boolean;
 }) {
-  // emphasis 项加左侧 4px 黑线，强化层级
+  // emphasis 项加左侧 2px 墨线，强化层级（不用加粗描边）
   return (
-    <div className={emphasis ? "border-l-4 border-[var(--ink)] pl-3" : ""}>
+    <div className={emphasis ? "border-l-2 border-[var(--ink)] pl-3" : "pl-3"}>
       <div className="mono-tag">{label}</div>
-      <div className="font-serif text-3xl leading-none tracking-tight mt-2">
+      <div className="font-serif text-[26px] leading-none tracking-tight mt-2 tabular-nums">
         {value}
       </div>
-      {sub && (
-        <div className="font-mono text-[13px] uppercase tracking-widest text-[var(--muted-fg)] mt-2">
-          {sub}
-        </div>
-      )}
+      {sub && <div className="font-mono text-[11px] text-[var(--muted-fg)] mt-1.5">{sub}</div>}
     </div>
   );
 }
@@ -192,71 +229,75 @@ function LetterRow({ l }: { l: LetterRecord }) {
   return (
     <>
       <tr
-        className="border-b border-[var(--border-light)] cursor-pointer transition-colors duration-100 hover:bg-[var(--ink)] hover:text-[var(--paper)] group"
+        className="border-b border-[var(--border-light)] cursor-pointer transition-colors duration-100 hover:bg-[var(--muted)] align-top"
         onClick={() => setExpanded(!expanded)}
       >
-        <td className="px-3 py-3 font-mono text-[13px] whitespace-nowrap">
-          {time}
+        <td className="px-4 py-2.5 font-mono text-[12px] whitespace-nowrap">{time}</td>
+        <td className="px-4 py-2.5 font-mono text-[12px]">{dashIfEmpty(l.provider)}</td>
+        <td className="px-4 py-2.5 font-mono text-[12px] text-[var(--muted-fg)]">
+          {dashIfEmpty(l.model)}
         </td>
-        <td className="px-3 py-3 font-mono text-[13px] uppercase tracking-widest">
-          {l.provider}
-        </td>
-        <td className="px-3 py-3 font-mono text-[13px]">{l.model}</td>
-        <td className="px-3 py-3 text-center">
+        <td className="px-4 py-2.5 text-center">
           {l.validation_ok ? (
-            <span className="font-mono text-sm">✓ OK</span>
+            <span className="font-mono text-[12px]">✓ OK</span>
           ) : (
             <span
-              className="font-mono text-sm border-b-2 border-current"
+              className="font-mono text-[12px] border-b border-current"
               title={l.validation_reasons.join(", ")}
             >
               ✗ FAIL
             </span>
           )}
         </td>
-        <td className="px-3 py-3 text-center">
+        <td className="px-4 py-2.5 text-center">
           {l.sent ? (
-            // 已发：反色徽章，但 hover 反色后会变白底黑字，要做兼容
-            <span className="font-mono text-[13px] uppercase tracking-widest bg-[var(--ink)] text-[var(--paper)] px-2 py-0.5 group-hover:bg-[var(--paper)] group-hover:text-[var(--ink)]">
-              SENT
-            </span>
+            <Badge variant="invert">{t("history.sentBadge")}</Badge>
           ) : l.dry_run ? (
-            <span className="font-mono text-[13px] uppercase tracking-widest border border-current px-2 py-0.5">
-              DRY
-            </span>
+            <Badge variant="outline">{t("history.dryBadge")}</Badge>
           ) : (
-            <span className="font-mono text-[13px] text-[var(--muted-fg)] group-hover:text-[var(--paper)]">
-              —
-            </span>
+            <span className="font-mono text-[12px] text-[var(--muted-fg)]">—</span>
           )}
         </td>
-        <td className="px-3 py-3 text-sm font-serif leading-snug">
-          {expanded
-            ? l.letter
-            : l.letter.slice(0, 60) + (l.letter.length > 60 ? "..." : "")}
+        <td className="px-4 py-2.5 leading-snug">
+          {l.letter ? (
+            expanded ? (
+              l.letter
+            ) : (
+              l.letter.slice(0, 60) + (l.letter.length > 60 ? "…" : "")
+            )
+          ) : (
+            // 智联只投递不发招呼语，这类记录 letter 是空串——别让整列看着像坏了
+            <span className="text-[var(--muted-fg)]">—</span>
+          )}
+        </td>
+        <td className="px-4 py-2.5 text-center text-[var(--muted-fg)]">
+          <ChevronRight
+            size={13}
+            strokeWidth={2.25}
+            aria-hidden
+            className={"inline transition-transform duration-100 " + (expanded ? "rotate-90" : "")}
+          />
         </td>
       </tr>
       {expanded && (
-        <tr className="border-b-2 border-[var(--ink)] bg-[var(--muted)]">
-          <td colSpan={6} className="px-3 py-5">
-            <div className="space-y-3">
-              <div>
-                <span className="mono-tag block mb-1">
-                  {t("history.jdPreview")}
-                </span>
-                <p className="text-sm font-serif leading-relaxed text-[var(--ink)]">
-                  {l.job_description.slice(0, 300)}
-                  {l.job_description.length > 300 && "..."}
-                </p>
-              </div>
+        <tr className="bg-[var(--paper-2)] border-b border-[var(--border)]">
+          <td colSpan={7} className="px-4 py-4">
+            <div className="space-y-3 max-w-3xl">
               {!l.validation_ok && (
-                <div className="border-l-4 border-[var(--ink)] pl-3">
-                  <span className="badge-invert">Validation Failed</span>
-                  <p className="text-sm font-mono mt-1">
+                <div className="border-l-2 border-[var(--ink)] pl-3">
+                  <Badge variant="invert">VALIDATION FAILED</Badge>
+                  <p className="font-mono text-[12px] mt-1.5">
                     {l.validation_reasons.join(", ")}
                   </p>
                 </div>
               )}
+              <div>
+                <span className="mono-tag block mb-1.5">{t("history.jdPreview")}</span>
+                <p className="text-[13px] leading-relaxed text-[var(--ink-soft)]">
+                  {l.job_description.slice(0, 300)}
+                  {l.job_description.length > 300 && "…"}
+                </p>
+              </div>
             </div>
           </td>
         </tr>

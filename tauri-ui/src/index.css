@@ -2,48 +2,76 @@
 @tailwind components;
 @tailwind utilities;
 
-/* === Minimalist Monochrome 设计 token === */
-/* 全站只允许纯黑、纯白、两级灰；零圆角、零阴影、衬线为主、等宽辅助 */
+/* ============================================================
+   Editorial Monochrome v2
+   ------------------------------------------------------------
+   保留「纯黑白 + 零圆角 + 衬线标题 + 等宽数据」的识别度，
+   但把界面从"线框"变成"排版"：
+   - 默认分隔用**发丝线**，2px 墨线只留给段落锚点
+   - 增加纸/浅灰/墨三档明度，用色块分层而不是靠加粗描边
+   - 正文改用系统无衬线（中文可读性），衬线只做展示，等宽只做数据
+   - 全站走 CSS 变量，深色模式 = 反转 ink / paper 两个变量
+   ============================================================ */
+
 :root {
-  --ink: #000000; /* 主前景 / 边框 / accent */
-  --paper: #ffffff; /* 主背景 */
-  --muted: #f5f5f5; /* 轻底块 */
-  --muted-fg: #525252; /* 次级文字 */
-  --border-light: #e5e5e5; /* 弱分割线 */
+  color-scheme: light;
+
+  --paper: #ffffff;
+  --paper-2: #fbfbfc;
+  --muted: #f5f5f6;
+  --muted-2: #ececee;
+  --ink: #0a0a0b;
+  --ink-soft: #3f3f46;
+  --muted-fg: #71717a;
+  --border-light: #e6e6e9;
+  --border: #d6d6db;
+
+  /* 反色块上的文字色（深色模式下会翻过来） */
+  --on-ink: #ffffff;
+  --on-ink-fg: #a1a1aa;
+
+  --ring: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper: #0b0b0d;
+  --paper-2: #101013;
+  --muted: #17171b;
+  --muted-2: #202027;
+  --ink: #f4f4f5;
+  --ink-soft: #d4d4d8;
+  --muted-fg: #8a8a94;
+  --border-light: #232329;
+  --border: #32323a;
+
+  --on-ink: #0b0b0d;
+  --on-ink-fg: #52525b;
 }
 
 @layer base {
   html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   body {
     background: var(--paper);
     color: var(--ink);
+    @apply font-sans antialiased;
+    font-feature-settings: "kern", "liga", "calt", "tnum";
+    overflow: hidden; /* 滚动交给内部面板，桌面 App 不该整页滚 */
   }
 
-  body {
-    /* 衬线作为正文：editorial 质感 */
-    @apply font-serif antialiased;
-    font-feature-settings: "kern", "liga", "calt";
-    /* 极淡的水平线噪点纹理，避免完全平 */
-    background-image: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 1px,
-      rgba(0, 0, 0, 0.02) 1px,
-      rgba(0, 0, 0, 0.02) 2px
-    );
-    background-size: 100% 4px;
-  }
-
-  /* 标题统一压紧字距 */
   h1,
   h2,
-  h3,
-  h4 {
-    @apply font-serif tracking-tight;
-    letter-spacing: -0.02em;
+  h3 {
+    @apply font-serif;
+    letter-spacing: -0.015em;
   }
 
-  /* 等宽元素：日志、数据、key 标签 */
   pre,
   code,
   kbd,
@@ -51,23 +79,44 @@
     @apply font-mono;
   }
 
-  /* 全局聚焦：仅 keyboard 时显示，3px 黑色实线 */
   :focus {
     outline: none;
   }
   :focus-visible {
-    outline: 3px solid var(--ink);
+    outline: 2px solid var(--ink);
     outline-offset: 2px;
   }
 
-  /* 选区也保持单色 */
   ::selection {
     background: var(--ink);
     color: var(--paper);
   }
+
+  /* 细窄滚动条，跟发丝线一个调子 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-fg);
+    background-clip: content-box;
+  }
 }
 
-@keyframes dsh-fade-in {
+/* ---------- 动效 ---------- */
+@keyframes fade-up {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -77,120 +126,312 @@
     transform: none;
   }
 }
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
 
 @layer components {
-  /* === 按钮 === */
-  /* 主按钮：黑底白字 → hover 反色到白底黑字 */
+  /* ============ 外壳 ============ */
+  .app-shell {
+    @apply flex h-full w-full overflow-hidden;
+  }
+
+  .sidebar {
+    @apply flex flex-col flex-shrink-0 border-r;
+    width: 208px;
+    background: var(--paper-2);
+    border-color: var(--border-light);
+  }
+
+  .nav-item {
+    @apply relative flex items-center gap-3 w-full px-3 py-2 text-sm rounded-none text-left transition-colors duration-100;
+    color: var(--muted-fg);
+  }
+  .nav-item:hover {
+    background: var(--muted);
+    color: var(--ink);
+  }
+  .nav-item[data-active="true"] {
+    background: var(--muted-2);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  /* 当前项左侧 2px 墨线（比整块反色克制） */
+  .nav-item[data-active="true"]::before {
+    content: "";
+    @apply absolute left-0 top-1.5 bottom-1.5;
+    width: 2px;
+    background: var(--ink);
+  }
+
+  /* ============ 卡片 / 面板 ============ */
+  .card {
+    @apply border;
+    background: var(--paper);
+    border-color: var(--border-light);
+  }
+  .card-head {
+    @apply flex items-center gap-3 px-5 py-3 border-b;
+    border-color: var(--border-light);
+    background: var(--paper-2);
+  }
+  .card-body {
+    @apply p-5;
+  }
+
+  .panel {
+    @apply border p-6;
+    border-color: var(--border-light);
+    background: var(--paper);
+  }
+  .panel-invert {
+    background: var(--ink);
+    color: var(--paper);
+    @apply p-6;
+  }
+
+  /* ============ 按钮 ============ */
   .btn {
-    @apply inline-flex items-center justify-center gap-2.5 px-6 py-3 text-sm font-mono uppercase tracking-wider border-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] transition-colors duration-100;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium transition-colors duration-100 select-none;
+    background: var(--ink);
+    color: var(--on-ink);
+    border: 1px solid var(--ink);
   }
   .btn:hover:not(:disabled) {
-    background: var(--paper);
-    color: var(--ink);
+    opacity: 0.86;
+  }
+  .btn:active:not(:disabled) {
+    opacity: 0.75;
   }
   .btn:disabled {
     @apply opacity-30 cursor-not-allowed;
   }
 
-  /* 副按钮：透明底黑边 → hover 填充 */
   .btn-outline {
-    @apply inline-flex items-center justify-center gap-2.5 px-6 py-3 text-sm font-mono uppercase tracking-wider border-2 border-[var(--ink)] bg-transparent text-[var(--ink)] transition-colors duration-100;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium transition-colors duration-100 select-none;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--border);
   }
   .btn-outline:hover:not(:disabled) {
-    background: var(--ink);
-    color: var(--paper);
+    border-color: var(--ink);
+    background: var(--muted);
   }
   .btn-outline:disabled {
     @apply opacity-30 cursor-not-allowed;
   }
 
-  /* 幽灵按钮：仅文字 + hover 下划线 */
   .btn-ghost {
-    @apply inline-flex items-center gap-2 px-2 py-1 text-sm font-mono uppercase tracking-wider text-[var(--ink)] border-b-2 border-transparent transition-colors duration-100;
+    @apply inline-flex items-center gap-2 px-2 py-1.5 text-sm transition-colors duration-100;
+    color: var(--muted-fg);
+    border: 1px solid transparent;
   }
   .btn-ghost:hover:not(:disabled) {
-    border-bottom-color: var(--ink);
+    color: var(--ink);
+    border-color: var(--border-light);
   }
   .btn-ghost:disabled {
     @apply opacity-30 cursor-not-allowed;
   }
 
-  /* === 输入框 === */
-  /* 仅底部边框 → focus 加粗 */
+  /* 图标按钮：方形，用于面板工具条 */
+  .icon-btn {
+    @apply inline-flex items-center justify-center w-7 h-7 transition-colors duration-100;
+    color: var(--muted-fg);
+    border: 1px solid transparent;
+  }
+  .icon-btn:hover:not(:disabled) {
+    color: var(--ink);
+    border-color: var(--border-light);
+    background: var(--muted);
+  }
+  .icon-btn[data-on="true"] {
+    color: var(--ink);
+    border-color: var(--border);
+    background: var(--muted);
+  }
+
+  /* ============ 表单 ============ */
   .field-input {
-    @apply w-full bg-transparent text-[var(--ink)] px-0 py-2 text-base border-0 border-b-2 border-[var(--ink)] outline-none transition-all duration-100;
+    @apply w-full px-0 py-2 text-sm transition-colors duration-100 outline-none;
+    background: transparent;
+    color: var(--ink);
+    border: 0;
+    border-bottom: 1px solid var(--border);
   }
   .field-input::placeholder {
-    @apply text-[var(--muted-fg)] italic;
+    color: var(--muted-fg);
+  }
+  .field-input:hover:not(:disabled) {
+    border-bottom-color: var(--muted-fg);
   }
   .field-input:focus,
   .field-input:focus-visible {
-    border-bottom-width: 4px;
+    border-bottom-color: var(--ink);
+    box-shadow: inset 0 -1px 0 0 var(--ink);
     outline: none;
   }
   .field-input:disabled {
     @apply opacity-50 cursor-not-allowed;
   }
 
-  /* select 在 native 表现下需要复位一些样式 */
+  /* 文本框（prompt 那种多行）改用完整描边 */
+  textarea.field-input {
+    @apply px-3 py-2 font-mono;
+    border: 1px solid var(--border);
+  }
+  textarea.field-input:focus {
+    border-color: var(--ink);
+    box-shadow: none;
+  }
+
   select.field-input {
     appearance: none;
-    background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%),
-      linear-gradient(135deg, var(--ink) 50%, transparent 50%);
-    background-position: calc(100% - 12px) 50%, calc(100% - 6px) 50%;
-    background-size: 6px 6px;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 11px) 50%, calc(100% - 6px) 50%;
+    background-size: 5px 5px;
     background-repeat: no-repeat;
     padding-right: 1.5rem;
+    cursor: pointer;
   }
 
-  /* 字段标签：mono uppercase 小字 */
   .field-label {
-    @apply block text-[13px] font-mono uppercase tracking-wider text-[var(--muted-fg)] mb-1.5;
+    @apply block text-[13px] font-medium mb-1;
+    color: var(--ink-soft);
+  }
+  .field-hint {
+    @apply text-[12px] leading-snug;
+    color: var(--muted-fg);
   }
 
-  /* === 容器 === */
-  /* 标准 panel：黑细边 + 白底 + 无圆角无阴影 */
-  .panel {
-    @apply bg-[var(--paper)] border border-[var(--ink)] p-6;
+  /* 变量名 chip（LLM_BASE_URL 这种） */
+  .tag-key {
+    @apply inline-flex items-center px-1.5 py-0.5 font-mono text-[11px] tracking-wide;
+    background: var(--muted);
+    color: var(--muted-fg);
+    border: 1px solid var(--border-light);
   }
 
-  /* 反色 panel：用于强调（黑底白字） */
-  .panel-invert {
-    @apply bg-[var(--ink)] text-[var(--paper)] p-6;
-  }
-
-  /* 段落分割线 */
-  .rule-thick {
-    @apply border-0 border-t-4 border-[var(--ink)];
-  }
-  .rule-thin {
-    @apply border-0 border-t border-[var(--ink)];
-  }
-  .rule-hair {
-    @apply border-0 border-t border-[var(--border-light)];
-  }
-
-  /* 小型 mono 标签（key / metadata） */
-  .mono-tag {
-    @apply font-mono text-[13px] uppercase tracking-wider text-[var(--muted-fg)];
-  }
-
-  /* 入场动效：新事件行 / 错误卡片淡入上移一点点。
-     刻意做得很轻（120ms、4px），批量刷新时不会显得晃。 */
-  .fade-in {
-    animation: dsh-fade-in 120ms ease-out both;
-  }
-
-  /* 日志/事件正文：等宽字体行距放宽，长日志更好读 */
-  .log-body {
-    line-height: 1.65;
-  }
-
-  /* 反色徽章（用于"成功 / 发送"这类强调） */
+  /* ============ 徽章 ============ */
   .badge-invert {
-    @apply inline-flex items-center px-2 py-0.5 font-mono text-[12px] uppercase tracking-wider bg-[var(--ink)] text-[var(--paper)];
+    @apply inline-flex items-center px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider;
+    background: var(--ink);
+    color: var(--on-ink);
   }
   .badge-outline {
-    @apply inline-flex items-center px-2 py-0.5 font-mono text-[12px] uppercase tracking-wider border border-[var(--ink)] text-[var(--ink)];
+    @apply inline-flex items-center px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider;
+    border: 1px solid var(--border);
+    color: var(--muted-fg);
+  }
+  .badge-muted {
+    @apply inline-flex items-center px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider;
+    background: var(--muted);
+    color: var(--muted-fg);
+  }
+
+  .mono-tag {
+    @apply font-mono text-[12px] uppercase tracking-wider;
+    color: var(--muted-fg);
+  }
+
+  /* ============ 分段控件 ============ */
+  .segmented {
+    @apply inline-flex border;
+    border-color: var(--border);
+  }
+  .segmented > button {
+    @apply px-3 py-1 text-[12px] transition-colors duration-100;
+    color: var(--muted-fg);
+    border-right: 1px solid var(--border);
+  }
+  .segmented > button:last-child {
+    border-right: 0;
+  }
+  .segmented > button:hover {
+    background: var(--muted);
+    color: var(--ink);
+  }
+  .segmented > button[data-active="true"] {
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+
+  /* ============ 分隔线 ============ */
+  .rule-thick {
+    @apply border-0 border-t-2;
+    border-color: var(--ink);
+  }
+  .rule-thin {
+    @apply border-0 border-t;
+    border-color: var(--ink);
+  }
+  .rule-hair {
+    @apply border-0 border-t;
+    border-color: var(--border-light);
+  }
+
+  /* ============ 状态栏 ============ */
+  .statusbar {
+    @apply flex items-center gap-4 px-4 h-8 text-[12px] font-mono flex-shrink-0 border-t;
+    background: var(--paper-2);
+    border-color: var(--border-light);
+    color: var(--muted-fg);
+  }
+
+  /* ============ 其它 ============ */
+  .fade-in {
+    animation: fade-in 140ms ease-out both;
+  }
+  .fade-up {
+    animation: fade-up 160ms ease-out both;
+  }
+  .log-body {
+    line-height: 1.6;
+  }
+
+  /* 运行中的不确定进度条：只有 data-active=true 时才跑动画 */
+  .progress-track {
+    @apply relative w-full h-[2px] overflow-hidden;
+    background: var(--border-light);
+  }
+  .progress-track[data-active="true"]::after {
+    content: "";
+    @apply absolute inset-y-0 left-0 w-1/4;
+    background: var(--ink);
+    animation: indeterminate 1.4s ease-in-out infinite;
+  }
+
+  .live-dot {
+    @apply inline-block w-1.5 h-1.5;
+    background: var(--ink);
+    animation: pulse-dot 1.2s ease-in-out infinite;
+  }
+
+  .empty {
+    @apply flex flex-col items-center justify-center gap-2 py-12 text-center;
+    color: var(--muted-fg);
   }
 }

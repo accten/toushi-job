@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ArrowUpRight, Sparkles, X } from "lucide-react";
 import { ipc, type UpdateInfo } from "../lib/ipc";
 import { useT } from "../store";
 
@@ -26,25 +27,25 @@ export default function UpdateBanner() {
   if (!info || dismissed) return null;
 
   return (
-    <div className="bg-[var(--ink)] text-[var(--paper)] text-[13px] font-mono uppercase tracking-widest">
-      <div className="max-w-7xl mx-auto px-8 py-2 flex items-center gap-4">
-        <span>
-          {t("update.available", { latest: info.latest, current: info.current })}
-        </span>
-        <button
-          onClick={() => ipc.openReleasePage(info.url).catch(() => {})}
-          className="underline underline-offset-2 hover:opacity-70 transition-opacity"
-        >
-          {t("update.download")}
-        </button>
-        <button
-          onClick={() => setDismissed(true)}
-          className="ml-auto hover:opacity-70 transition-opacity"
-          aria-label={t("update.dismiss")}
-        >
-          ✕
-        </button>
-      </div>
+    <div className="flex items-center gap-3 px-5 h-9 flex-shrink-0 bg-[var(--ink)] text-[var(--paper)] text-[12px] font-mono fade-in">
+      <Sparkles size={13} strokeWidth={2.25} aria-hidden className="opacity-80" />
+      <span>{t("update.available", { latest: info.latest, current: info.current })}</span>
+      <button
+        type="button"
+        onClick={() => ipc.openReleasePage(info.url).catch(() => {})}
+        className="inline-flex items-center gap-1 underline underline-offset-2 hover:opacity-70 transition-opacity"
+      >
+        {t("update.download")}
+        <ArrowUpRight size={12} strokeWidth={2.5} aria-hidden />
+      </button>
+      <button
+        type="button"
+        onClick={() => setDismissed(true)}
+        className="ml-auto hover:opacity-70 transition-opacity"
+        aria-label={t("update.dismiss")}
+      >
+        <X size={14} strokeWidth={2.5} aria-hidden />
+      </button>
     </div>
   );
 }

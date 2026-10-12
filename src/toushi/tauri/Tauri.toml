@@ -23,7 +23,7 @@ withGlobalTauri = true
 [[app.windows]]
 title = "投石 · Toushi"
 label = "main"
-width = 1000
-height = 720
-minWidth = 600
-minHeight = 400
+width = 1200
+height = 800
+minWidth = 760
+minHeight = 560
