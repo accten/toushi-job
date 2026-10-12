@@ -3,7 +3,8 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "pyembed/python": "./"
+      "pyembed/python": "./",
+      "pyembed/models": "./models"
     }
   }
 }

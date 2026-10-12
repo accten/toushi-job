@@ -108,6 +108,33 @@ if [[ -f "$build_marker" ]]; then
     rm -f "$build_marker"
 fi
 
+# ---------- 3.6 把嵌入模型拷进 resources ----------
+# 装出来的 App 要在完全离线的机器上向量化简历，模型必须随包走。
+# 放在 pyembed 旁边（src-tauri/pyembed/models），由 tauri.bundle.json 的
+# resources 映射到安装目录 —— 安装后是 <安装目录>/models，正好落在
+# vectorization._candidate_model_roots() 的候选里。
+#
+# 只拷 snapshots 那一层：HF 缓存里 blobs 和 snapshots 各占一份（837MB），
+# 真正要的只有约 418MB 那份。
+MODEL_DST="$PYEMBED_DIR/models"
+if [[ ! -d "$MODEL_DST/hub" ]]; then
+    SNAPSHOT=$(find "$REPO_ROOT/models/hub" -type d -name snapshots -maxdepth 3 2>/dev/null \
+        | while read -r d; do find "$d" -mindepth 1 -maxdepth 1 -type d; done \
+        | while read -r s; do [[ -f "$s/config.json" ]] && echo "$s"; done \
+        | head -n 1)
+    if [[ -z "$SNAPSHOT" ]]; then
+        echo "❌ 仓库里找不到嵌入模型快照（models/hub/<repo>/snapshots/<hash>/config.json）。装出来的 App 没模型会崩——见 docs/packaging-windows.md" >&2
+        exit 1
+    fi
+    REPO_ID=$(basename "$(dirname "$(dirname "$SNAPSHOT")")")
+    TARGET="$MODEL_DST/hub/$REPO_ID/snapshots/$(basename "$SNAPSHOT")"
+    echo "==> 拷贝嵌入模型：$SNAPSHOT -> $TARGET"
+    mkdir -p "$TARGET"
+    cp -R "$SNAPSHOT/." "$TARGET/"
+else
+    echo "==> 嵌入模型已在 pyembed/models，跳过拷贝（要重来就先删掉那个目录）"
+fi
+
 # ---------- 4. Rust 链接参数 ----------
 # PYO3_PYTHON：不设的话 pyo3 自动探测系统 Python → 链到 CLT 的
 # Python3.framework → .app 启动 dyld crash。这是整个脚本最关键的两行。

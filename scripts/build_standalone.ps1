@@ -1,4 +1,4 @@
-# Phase D：Windows 上打 standalone .exe / NSIS / MSI（macOS .app 的等价物）。
+﻿# Phase D：Windows 上打 standalone .exe / NSIS / MSI（macOS .app 的等价物）。
 #
 # 跟 build_standalone.sh 平行——固化"嵌入式 Python 组装 + 业务包安装 +
 # Rust 链接参数 + tauri bundle"整条流程。**不要手工拆步骤跑**：漏掉
@@ -116,6 +116,33 @@ $BuildMarker = Join-Path $PyembedDir 'python\BUILD'
 if (Test-Path -PathType Leaf $BuildMarker) {
     Write-Host "==> 删除 pyembed BUILD 标记文件（避开 cargo build\ 目录大小写冲突）"
     Remove-Item -Force $BuildMarker
+}
+
+# ---------- 3.6 把嵌入模型拷进 resources ----------
+# 装出来的 App 要能在完全离线的机器上向量化简历，模型必须随包走。
+# 放在 pyembed 旁边（src-tauri\pyembed\models），跟 pyembed\python 一样由
+# tauri.bundle.json 的 resources 映射到安装目录 —— 安装后是 <安装目录>\models，
+# 正好落在 vectorization._candidate_model_roots() 的候选里。
+#
+# 只拷 snapshots 那一层：Windows 上 HuggingFace 缓存是复制不是硬链接，
+# models\ 里 blobs 和 snapshots 各占一份（837MB），真正要的只有 418MB 那份。
+$ModelDst = Join-Path $PyembedDir 'models'
+if (-not (Test-Path (Join-Path $ModelDst 'hub'))) {
+    $Snapshot = Get-ChildItem -Path (Join-Path $RepoRoot 'models\hub') -Recurse -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq 'snapshots' } |
+        ForEach-Object { Get-ChildItem $_.FullName -Directory } |
+        Where-Object { Test-Path (Join-Path $_.FullName 'config.json') } |
+        Select-Object -First 1
+    if (-not $Snapshot) {
+        throw "仓库里找不到嵌入模型快照（models\hub\<repo>\snapshots\<hash>\config.json）。装出来的 App 没模型会崩 —— 见 docs/packaging-windows.md"
+    }
+    $RepoId = $Snapshot.Parent.Parent.Name
+    $Target = Join-Path $ModelDst (Join-Path 'hub' (Join-Path $RepoId (Join-Path 'snapshots' $Snapshot.Name)))
+    Write-Host "==> 拷贝嵌入模型：$($Snapshot.FullName) -> $Target"
+    New-Item -ItemType Directory -Path $Target -Force | Out-Null
+    Copy-Item -Path (Join-Path $Snapshot.FullName '*') -Destination $Target -Recurse -Force
+} else {
+    Write-Host "==> 嵌入模型已在 pyembed\models，跳过拷贝（要重来就先删掉那个目录）"
 }
 
 # ---------- 4. Rust 链接参数 ----------

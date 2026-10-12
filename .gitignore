@@ -1,4 +1,9 @@
 /youcai_advanced_market/
+# pytest 临时目录：本机沙箱不让写 %TEMP%\pytest-of-*，本地跑测试用
+#   uv run pytest tests/ --basetemp=.pytest-tmp -p no:cacheprovider
+# 指到这里；不要提交。
+/.pytest-tmp/
+/.pytest_cache/
 /back/
 /D-id_Streaming_Chatgpt/
 /jarvis/
